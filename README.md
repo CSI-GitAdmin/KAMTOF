@@ -63,5 +63,5 @@ cmake -DCMAKE_BUILD_TYPE=DEBUG -DENABLE_GPU=ON -DGPU_DEVELOP=OFF -DHW='INTGPU;NV
 KAMTOF contains 3 different executables including unit tests and the Laplace solver 
 - `cpu_framework/cpu_framework_test` : Test certain basic functionalities of the CPU framework (Will not be built is ENABLE_GPU is ON)
 - `gpu_framework/gpu_framework_test` : Test certain basic functionalities of the GPU framework
-- `solver` : The actual LaPlace Solver
+- `solver` : The actual Laplace Solver
   - The solver inputs are all command line inputs: `./solver <Nx> <Ny> <num_time_steps> <gpu_solver_bool>`
