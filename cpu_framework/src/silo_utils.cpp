@@ -1,3 +1,5 @@
+#include <string.h>
+
 #include "silo_utils.h"
 #include "cpu_framework_enums.h"
 #include "logger.hpp"

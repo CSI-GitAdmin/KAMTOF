@@ -9,6 +9,9 @@ project( "SOLVER using GPU Framework" )
 find_package (MPI REQUIRED )
 
 # Pass the Device flag to the solver source code
+if(NOT DEFINED ENABLE_GPU) # By default build the ENABLE GPU ON VERSION
+   set(ENABLE_GPU ON)
+endif()
 if (ENABLE_GPU)
    add_definitions(-DENABLE_GPU)
 endif()

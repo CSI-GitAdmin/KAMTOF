@@ -48,7 +48,7 @@ public:
       return m_offsets;
    }
 
-   const uint32_t num_offsets() const
+   const uint8_t num_offsets() const
    {
       return m_num_offsets;
    }
@@ -63,9 +63,13 @@ public:
       return m_size;
    }
 
+   void set_offsets(const uint8_t num_offsets, const uint32_t* offsets);
+
+   void free_offsets();
+
 protected:
    void* m_gpu_data = nullptr;
-   uint32_t m_num_offsets = 0;
+   uint8_t m_num_offsets = 0;
    uint32_t* m_offsets = nullptr;
    size_t m_size = 0;
 #ifndef NDEBUG

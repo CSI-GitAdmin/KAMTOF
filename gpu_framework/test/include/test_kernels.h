@@ -2,7 +2,7 @@
 #define TEST_KERNELS_H
 
 #include "datasetstoragegpu.h" // For DSSGPU
-#include "gpu_enums.h" // For CGPU namespace
+#include "gpu_enums.h" // For GDF namespace
 #include "gpu_api_functions.h"
 
 constexpr strict_fp_t tol = 1.0e-10;
@@ -102,6 +102,28 @@ private:
 
 };
 
+class kg_set_initial_condition
+{
+public:
+   kg_set_initial_condition(CellGPU<double,1>& velocity_in, const double init_val_x_in, const double init_val_y_in, const double init_val_z_in):
+      velocity(velocity_in), init_val_x(init_val_x_in), init_val_y(init_val_y_in), init_val_z(init_val_z_in)
+   {}
+
+   SYCL_EXTERNAL void operator() (sycl::nd_item<3> itm) const;
+
+   template<uint8_t N>
+   void transfer_vars_to_gpu()
+   {
+      GDF::transfer_vars_to_gpu_impl<N>(velocity, init_val_x, init_val_y, init_val_z);
+   }
+
+private:
+   mutable CellGPU<double,1> velocity;
+   double init_val_x;
+   double init_val_y;
+   double init_val_z;
+};
+
 class kg_norm2
 {
 public:
@@ -134,21 +156,27 @@ private:
    const size_t size;
 };
 
-// class kg_silo_null // FIXME
-// {
-// public:
-//    kg_silo_null(const size_t random_idx, CellGPU<strict_fp_t> silo_null, const strict_fp_t subtract_val):
-//       gpu_random_idx(random_idx),
-//       gpu_silo_null(silo_null),
-//       gpu_subtract_val(subtract_val)
-//    {}
+class kg_silo_null
+{
+public:
+   kg_silo_null(const size_t random_idx, CellGPU<strict_fp_t> silo_null, const strict_fp_t subtract_val):
+      gpu_random_idx(random_idx),
+      gpu_silo_null(silo_null),
+      gpu_subtract_val(subtract_val)
+   {}
 
-//    SYCL_EXTERNAL void operator() (sycl::nd_item<3> itm) const;
+   SYCL_EXTERNAL void operator() (sycl::nd_item<3> itm) const;
 
-// private:
-//    const size_t gpu_random_idx;
-//    mutable CellGPU<strict_fp_t> gpu_silo_null;
-//    const strict_fp_t gpu_subtract_val;
-// };
+   template<uint8_t N>
+   void transfer_vars_to_gpu()
+   {
+      GDF::transfer_vars_to_gpu_impl<N>(gpu_random_idx, gpu_silo_null, gpu_subtract_val);
+   }
+
+private:
+   const size_t gpu_random_idx;
+   mutable CellGPU<strict_fp_t> gpu_silo_null;
+   const strict_fp_t gpu_subtract_val;
+};
 
 #endif // TESTS_KERNELS_h

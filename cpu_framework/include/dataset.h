@@ -2,18 +2,26 @@
 #define DATASET_H
 
 #include "datasetbase.h"
+#include "indexdataset.h"
 
 template <class T, uint8_t DIMS>
 class dataSet : public dataSetBase
 {
 public:
-   dataSet(const std::string& name, const uint64_t m_num_entries, const CDF::StorageType storage_type, const uint8_t* const shape = nullptr, const bool allocate_mem = true);
+   dataSet(const std::string& name, const uint64_t m_num_entries, const CDF::StorageType storage_type, const uint8_t* const shape, const bool is_unresolved_entry, const bool allocate_mem);
 
    dataSet(const dataSet& other) = delete;
 
    inline T& operator[] (uint64_t index)
    {
       static_assert(DIMS == ZEROD, "This operator can only be called on ZEROD variables");
+#ifdef ENABLE_GPU
+   #ifndef GPU_DEVELOP
+      #ifndef NDEBUG
+            dataSetBase::assert_cpu_data_writeability();
+      #endif
+   #endif
+#endif
       return dataSetBase::operator[]<T>(index);
    }
 
@@ -21,6 +29,29 @@ public:
    {
       static_assert(DIMS == ZEROD, "This operator can only be called on ZEROD variables");
       return dataSetBase::operator[]<T>(index);
+   }
+
+   template <class... Indices>
+   inline T& operator()(Indices&&... idx)
+   {
+      static_assert(DIMS > 0, "This interface is not intended for ZEROD variables");
+      static_assert(DIMS + 1 == sizeof...(Indices), "You have provided the wrong number of arguments");
+#ifdef ENABLE_GPU
+   #ifndef GPU_DEVELOP
+      #ifndef NDEBUG
+            dataSetBase::assert_cpu_data_writeability();
+      #endif
+   #endif
+#endif
+      return indexer<T, DIMS>::access(static_cast<T*>(m_data), m_offsets, DIMS+1, static_cast<Indices&&>(idx)...);
+   }
+
+   template <class... Indices>
+   const inline T& operator()(Indices&&... idx) const
+   {
+      static_assert(DIMS > 0, "This interface is not intended for ZEROD variables");
+      static_assert(DIMS + 1 == sizeof...(Indices), "You have provided the wrong number of arguments");
+      return indexer<T, DIMS>::access_const(static_cast<T*>(m_data), m_offsets, DIMS+1, static_cast<Indices&&>(idx)...);
    }
 
    template <class R>

@@ -7,6 +7,7 @@
 #include "datasetbasegpu.h" // For DSBGPU
 #include "gpu_instance_t.h" // For GPUInstance member functions
 #include "datasetstorage.h"
+#include "datasetgpu.h"
 
 namespace GDF
 {
@@ -14,11 +15,11 @@ class GPUManager_t;
 } // namespace GDF
 
 template <class T, CDF::StorageType TYPE, uint8_t DIMS /* = ZEROD */>
-class dataSetStorageGPU : public dataSetBaseGPU
+class dataSetStorageGPU : public dataSetGPU<T, DIMS>
 {
 public:
    dataSetStorageGPU(const dataSetStorage<T, TYPE, DIMS>& dss_obj, const GDF::GPUManager_t* manager):
-      dataSetBaseGPU(), // The member are null/0 intialized here and will be set later in allocate_gpu_data_ptr() because we also need to set the statuses
+      dataSetGPU<T, DIMS>(), // The member are null/0 intialized here and will be set later in allocate_gpu_data_ptr() because we also need to set the statuses
       m_gpu_manager((assert(manager), manager)),
       is_primary(true),
       cpu_dss_ptr(dss_obj.m_dsb()),
@@ -34,14 +35,14 @@ public:
    }
 
    dataSetStorageGPU(const dataSetStorageGPU& other):
-      dataSetBaseGPU(other.m_gpu_data, other.m_num_offsets, other.m_offsets, other.m_size),
+      dataSetGPU<T, DIMS>(other.m_gpu_data, other.m_num_offsets, other.m_offsets, other.m_size),
       m_gpu_manager(other.m_gpu_manager),
       is_primary(false), // For copies from existing DSSGPU, is_primary is set to false to avoid unintended destruction
       cpu_dss_ptr(other.cpu_dss_ptr),
       m_name(other.m_name)
    {
 #ifndef NDEBUG
-      is_read_only =other.is_read_only;
+      dataSetBaseGPU::is_read_only =other.is_read_only;
 #endif
    }
 
@@ -59,52 +60,33 @@ public:
 #endif
    }
 
+   template <class... Indices>
+   inline T& operator()(Indices&&... idx)
+   {
+      return dataSetGPU<T,DIMS>::operator () (static_cast<Indices&&>(idx)...);
+   }
+
+   template <class... Indices>
+   const inline T& operator()(Indices&&... idx) const
+   {
+      return dataSetGPU<T,DIMS>::operator () (static_cast<Indices&&>(idx)...);
+   }
+
+   inline operator T& ()
+   {
+      static_assert(TYPE == CDF::StorageType::PARAMETER && DIMS == 0, "This functionality is only supported for parameters");
+      return static_cast<T*>(dataSetBase::m_data)[0];
+   }
+
+   inline operator const T& () const
+   {
+      static_assert(TYPE == CDF::StorageType::PARAMETER && DIMS == 0, "This functionality is only supported for parameters");
+      return static_cast<const T*>(dataSetBase::m_data)[0];
+   }
+
    const GDF::GPUManager_t* get_manager() const
    {
       return m_gpu_manager;
-   }
-
-   const size_t byte_size() const;
-
-   const T* data() const
-   {
-      return static_cast<T*>(this->m_gpu_data);
-   }
-
-   T* data()
-   {
-      return static_cast<T*>(this->m_gpu_data);
-   }
-
-   const uint64_t total_num_elements() const;
-
-   inline const T& operator[](uint64_t idx) const
-   {
-      static_assert(DIMS == 0, "The [] operator is only for ZEROD in release mode and in debug mode for users to index the data as a 1D array");
-#ifndef DISABLE_GPU_KERNEL_ASSERTS
-      assert(this->m_gpu_data && "Variable is not transfered to GPU (or) Non existent SILO variable is used on the GPU");
-      assert(idx < this->m_num_entries);
-#endif
-      return static_cast<T*>(this->m_gpu_data)[idx];
-   }
-
-   inline T& operator[](uint64_t idx)
-   {
-      static_assert(DIMS == 0, "The [] operator is only for ZEROD in release mode and in debug mode for users to index the data as a 1D array");
-#ifndef DISABLE_GPU_KERNEL_ASSERTS
-      assert(this->m_gpu_data && "Variable is not transfered to GPU (or) Non existent SILO variable is used on the GPU");
-      assert(!is_read_only && "Trying to get access to a read only data in an editable way");
-      assert(idx < this->m_num_entries);
-#endif
-      return static_cast<T*>(this->m_gpu_data)[idx];
-   }
-
-   // Both const and non-const objects can call this function
-   inline bool exists() const
-   {
-      // For now, we are doing the simple check if the GPU data exists
-      return this->void_data();
-      // GPU_TODO: We probably have to think about checking the GPU statuses too!
    }
 
 private:
@@ -130,8 +112,6 @@ public:
    const dataSetBase* cpu_dss_ptr = nullptr;
    const char* m_name = nullptr;
 };
-
-#include "detail/datasetstoragegpu.hpp"
 
 template <class T, CDF::StorageType TYPE, uint8_t DIMS>
 struct sycl::is_device_copyable<dataSetStorageGPU<T, TYPE, DIMS>> : std::true_type {};

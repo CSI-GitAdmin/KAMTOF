@@ -12,6 +12,7 @@
 #include "silo_fwd.h"
 #include "fp_data_types.h"
 
+#include "oneMathSPMV.h"
 
 class Solver_base_gpu
 {
@@ -28,7 +29,7 @@ public:
    
    void compute_system();
    
-   void update_solution();
+   void update_solution(const int solver_type, const int num_iter);
 
    void write_solution(std::string file_name);
 
@@ -45,7 +46,24 @@ public:
       return residual_norm;
    }
 
+   strict_fp_t get_residual_norm()
+   {
+      return residual_norm;
+   }
+
    Solver_base_gpu();
+
+   ~Solver_base_gpu()
+   {
+      if(m_spmv_sys->is_setup())
+      {
+         m_spmv_sys->release_system();
+         delete m_spmv_sys;
+         m_spmv_sys  = nullptr;
+      }
+   }
+
+   struct GDF::oneMathSPMV* m_spmv_sys;
    
 protected:
    int num_cells;
@@ -88,7 +106,12 @@ protected:
    strict_fp_t delta_t;
    bool m_implicit;
    
-   void jacobi_linear_solver ();
+   void jacobi_linear_solver (const int num_iter);
+
+   void setup_m_spmv_system();
+   void sparse_matvec(const strict_fp_t* const vec_in, strict_fp_t* const vec_out);
+   void dot_product(const strict_fp_t* const x, const strict_fp_t* const y, strict_fp_t* const result);
+   void bicgstab_linear_solver(const int num_iter);
    
    void compute_residual_norm ()
    {

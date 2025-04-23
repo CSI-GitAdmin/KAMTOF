@@ -5,6 +5,7 @@
 #include <cassert>
 #include <string>
 #include "extractor.hpp"
+#include "cpu_globals.h"
 
 namespace CDF
 {
@@ -24,7 +25,8 @@ enum class xpu_t : uint8_t;
 class dataSetBase
 {
 public:
-   dataSetBase(const std::string& name, const uint64_t m_num_entries, const CDF::StorageType storage_type, const CDF::PODType pod_type, const uint8_t dims, const uint8_t* const shape = nullptr, const bool allocate_mem = true);
+   dataSetBase(const std::string& name, const uint64_t m_num_entries, const CDF::StorageType storage_type, const CDF::PODType pod_type, const uint8_t dims, const uint8_t* const shape,
+               const bool is_unresolved_entry, const bool allocate_mem);
 
    dataSetBase(const dataSetBase& other) = delete;
 
@@ -40,9 +42,9 @@ public:
       m_data = data;
    }
 
-   bool exists() const // FIXME
+   bool exists() const
    {
-      return true;
+      return !is_unresolved;
    }
 
    const std::string& name() const
@@ -55,39 +57,14 @@ public:
       return m_byte_size;
    }
 
-   inline void* cpu_data()
+   void* cpu_data()
    {
-#ifdef GPU_DEVELOP
-      switch(writeable_on_cpu)
-      {
-         case 0:
-            transfer_to_cpu();
-         default:
-         {
-            return m_data;
-         }
-      }
-#else
       return m_data;
-#endif
    }
-   inline const void* cpu_data() const
+   const void* cpu_data() const
    {
-#ifdef GPU_DEVELOP
-      switch(readable_on_cpu)
-      {
-         case 0:
-            transfer_to_cpu(true);
-         default:
-         {
-            return m_data;
-         }
-      }
-#else
       return m_data;
-#endif
    }
-
 
    template<class T>
    inline T& operator[](const uint64_t index)
@@ -97,26 +74,9 @@ public:
       assert(index < m_size && !m_offsets); // Ensure that the index is within bounds
 #endif
 #ifdef GPU_DEVELOP
-      switch(writeable_on_cpu)
-      {
-         case 0:
-            transfer_to_cpu();
-         default:
-         {
-#ifndef NDEBUG
-            assert_cpu_data_writeability();
-#endif
-            return static_cast<T*>(m_data)[index];
-         }
-      }
-#else
-#ifndef NDEBUG
-#ifdef ENABLE_GPU
-      assert_cpu_data_writeability();
-#endif
+      in_const_operator = 0;
 #endif
       return static_cast<T*>(m_data)[index];
-#endif
    }
 
    template<class T>
@@ -127,19 +87,37 @@ public:
       assert(index < m_size && !m_offsets); // Ensure that the index is within bounds
 #endif
 #ifdef GPU_DEVELOP
-      switch(readable_on_cpu)
-      {
-         case 0:
-            transfer_to_cpu(true);
-         default:
-         {
-            return static_cast<T*>(m_data)[index];
-         }
-      }
-#else
-      return static_cast<T*>(m_data)[index];
+      in_const_operator = 1;
 #endif
+      return static_cast<T*>(m_data)[index];
    }
+
+   CDF::StorageType StorageType() const
+   {
+      return m_storage_type;
+   }
+
+   CDF::PODType PODType() const
+   {
+      return m_pod_type;
+   }
+
+   const uint32_t* const offsets() const
+   {
+      return m_offsets;
+   }
+
+   const uint8_t num_offsets() const
+   {
+      return m_num_offsets;
+   }
+
+protected:
+
+   void set_offsets(const uint8_t dims, const uint8_t* const shape);
+   void allocate_m_data(const uint64_t byte_size);
+   void delete_m_data();
+   void resize_internal(const uint64_t new_byte_size);
 
    void* m_data;
 
@@ -153,12 +131,29 @@ public:
    CDF::PODType m_pod_type;
    CDF::StorageType m_storage_type;
    std::string m_name;
+   bool is_unresolved;
 
 #ifdef ENABLE_GPU
+protected:
    // The mutable keyword allows const functions modify it
    mutable GDF::GPUInstance_t* gpu_instance = nullptr;
-   mutable int writeable_on_cpu = true;
-   mutable int readable_on_cpu = true;
+   uint64_t allocation_size = 0; // The cloest multiple of system_page_size which is greater than m_byte_size
+
+   void deallocate_gpu_data_ptr();
+   void allocate_page_aligned_memory_internal(const uint64_t byte_size);
+   void deallocate_page_aligned_memory_internal();
+   void copy_over_and_resize(const uint64_t new_byte_size);
+   void deallocate_gpu_instance();
+   void destruct_gpu_instance();
+   void* get_gpu_void_data();
+   const void* get_gpu_void_data() const;
+#ifndef NDEBUG
+   void assert_cpu_data_writeability();
+#endif
+
+public:
+
+   void transfer_to_cpu(bool read_only = false) const;
 
    void* gpu_data(void)
    {
@@ -184,19 +179,16 @@ public:
       gpu_instance = other;
    }
 
-   void deallocate_gpu_data_ptr();
-   void deallocate_gpu_instance();
-   void destruct_gpu_instance();
+   uint64_t get_allocation_size() const
+   {
+      return allocation_size;
+   }
+
    void set_gpu_data_status_to_resized();
-   void* get_gpu_void_data();
-   const void* get_gpu_void_data() const;
    const GDF::xpu_data_status_t& get_xpu_data_status(const GDF::xpu_t &device_type) const;
-   void assert_cpu_data_writeability();
-   void validate_cpu_data_ptr();
-#ifdef GPU_DEVELOP
-   void transfer_to_cpu(bool read_only = false) const;
 #endif
-#endif
+
+   friend class silo;
 };
 
 #endif // DATASETBASE_H

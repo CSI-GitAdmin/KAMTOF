@@ -1,9 +1,53 @@
 #include "gpu_manager_t.h"
 #include <cassert>
 #include <algorithm>
+#include <sys/mman.h>
 
 namespace GDF
 {
+
+#ifdef GPU_DEVELOP
+void protect_m_data(const dataSetBase* const dsb_entry, GPUInstance_t& cur_gpu_instance, const xpu_data_status_t& cpu_data_status)
+{
+   /*
+      // Validate/Invalidate the CPU/GPU data pointers based on the stauses
+      if(cpu_data_status == xpu_data_status_t::OUT_OF_DATE)
+         cur_gpu_instance.invalidate_cpu_data_ptr();
+      else
+         cur_gpu_instance.validate_cpu_data_ptr();
+
+      if((gpu_data_status == xpu_data_status_t::OUT_OF_DATE) || (gpu_data_status == xpu_data_status_t::RESIZED_ON_CPU))
+         cur_gpu_instance.invalidate_gpu_data_ptr();
+      else
+         cur_gpu_instance.validate_gpu_data_ptr();
+   */
+
+   if(cpu_data_status == xpu_data_status_t::OUT_OF_DATE)
+   {
+      // Remove both read and write access to the data pointer
+      if(mprotect(cur_gpu_instance.get_valid_cpu_data(), dsb_entry->get_allocation_size(), PROT_NONE) == -1)
+      {
+         log_msg<CDF::LogLevel::ERROR>(std::string("Failure while protecting data in transfer_to_gpu for variable: ") + dsb_entry->name());
+      }
+   }
+   else if(cpu_data_status == xpu_data_status_t::UP_TO_DATE_READ)
+   {
+      // Remove write access to the data pointer
+      if(mprotect(cur_gpu_instance.get_valid_cpu_data(), dsb_entry->get_allocation_size(), PROT_READ) == -1)
+      {
+         log_msg<CDF::LogLevel::ERROR>(std::string("Failure while protecting data in transfer_to_gpu for variable: ") + dsb_entry->name());
+      }
+   }
+   else if(cpu_data_status == xpu_data_status_t::UP_TO_DATE_WRITE || cpu_data_status == xpu_data_status_t::TEMP_WRITE)
+   {
+      // Enable both read and write access to the data pointer
+      if(mprotect(cur_gpu_instance.get_valid_cpu_data(), dsb_entry->get_allocation_size(), PROT_READ | PROT_WRITE) == -1)
+      {
+         log_msg<CDF::LogLevel::ERROR>(std::string("Failure while protecting data in transfer_to_gpu for variable: ") + dsb_entry->name());
+      }
+   }
+}
+#endif
 
 void GPUManager_t::set_device_properties()
 {
@@ -229,34 +273,8 @@ void GPUManager_t::transfer_to_gpu_internal(const dataSetBase* const dsb_entry, 
          log_msg<CDF::LogLevel::ERROR>("An internal error occured while moving data from CPU to GPU.");
       }
       }
-
-      // Validate/Invalidate the CPU/GPU data pointers based on the stauses
-      if(cpu_data_status == xpu_data_status_t::OUT_OF_DATE)
-         cur_gpu_instance.invalidate_cpu_data_ptr();
-      else
-         cur_gpu_instance.validate_cpu_data_ptr();
-
-      if((gpu_data_status == xpu_data_status_t::OUT_OF_DATE) || (gpu_data_status == xpu_data_status_t::RESIZED_ON_CPU))
-         cur_gpu_instance.invalidate_gpu_data_ptr();
-      else
-         cur_gpu_instance.validate_gpu_data_ptr();
-
 #ifdef GPU_DEVELOP
-      if(cpu_data_status == xpu_data_status_t::OUT_OF_DATE)
-      {
-         dsb_entry->readable_on_cpu = false;
-         dsb_entry->writeable_on_cpu = false;
-      }
-      else if(cpu_data_status == xpu_data_status_t::UP_TO_DATE_READ)
-      {
-         dsb_entry->readable_on_cpu = true;
-         dsb_entry->writeable_on_cpu = false;
-      }
-      else if(cpu_data_status == xpu_data_status_t::UP_TO_DATE_WRITE)
-      {
-         dsb_entry->readable_on_cpu = true;
-         dsb_entry->writeable_on_cpu = true;
-      }
+      protect_m_data(dsb_entry, cur_gpu_instance, cpu_data_status);
 #endif
 
 // Set the read_only flag
@@ -470,33 +488,8 @@ void GPUManager_t::transfer_to_cpu_internal(const dataSetBase * const dsb_entry,
       }
       }
 
-      // Validate/Invalidate the CPU/GPU data pointers based on the stauses
-      if(cpu_data_status == xpu_data_status_t::OUT_OF_DATE)
-         cur_gpu_instance.invalidate_cpu_data_ptr();
-      else
-         cur_gpu_instance.validate_cpu_data_ptr();
-
-      if((gpu_data_status == xpu_data_status_t::OUT_OF_DATE) || (gpu_data_status == xpu_data_status_t::RESIZED_ON_CPU))
-         cur_gpu_instance.invalidate_gpu_data_ptr();
-      else
-         cur_gpu_instance.validate_gpu_data_ptr();
-
 #ifdef GPU_DEVELOP
-      if(cpu_data_status == xpu_data_status_t::OUT_OF_DATE)
-      {
-         dsb_entry->readable_on_cpu = false;
-         dsb_entry->writeable_on_cpu = false;
-      }
-      else if(cpu_data_status == xpu_data_status_t::UP_TO_DATE_READ)
-      {
-         dsb_entry->readable_on_cpu = true;
-         dsb_entry->writeable_on_cpu = false;
-      }
-      else if(cpu_data_status == xpu_data_status_t::UP_TO_DATE_WRITE)
-      {
-         dsb_entry->readable_on_cpu = true;
-         dsb_entry->writeable_on_cpu = true;
-      }
+      protect_m_data(dsb_entry, cur_gpu_instance, cpu_data_status);
 #endif
 
 // Set the read_only flag
@@ -561,8 +554,8 @@ void GPUManager_t::allocate_gpu_data_ptr(GPUInstance_t* cur_gpu_instance, const 
    cur_m_gpu_data = malloc_gpu_var_internal<void>(cur_cpu_dsb_ptr->byte_size());
    cur_gpu_dsb_ptr->set_data(cur_m_gpu_data);
    cur_gpu_dsb_ptr->set_size(cur_cpu_dsb_ptr->size());
-   if(set_offsets) // Only change the offsets, if explicitly told to do so // FIXME
-      // cur_gpu_dsb_ptr->set_offsets(cur_cpu_dsb_ptr->num_offsets(), cur_cpu_dsb_ptr->offsets());
+   if(set_offsets)
+      cur_gpu_dsb_ptr->set_offsets(cur_cpu_dsb_ptr->num_offsets(), cur_cpu_dsb_ptr->offsets());
 
       cur_gpu_instance->set_xpu_data_status(xpu_t::GPU, xpu_data_status_t::OUT_OF_DATE);
    assert(cur_gpu_instance->get_xpu_data_status(xpu_t::CPU) == xpu_data_status_t::UP_TO_DATE_WRITE);

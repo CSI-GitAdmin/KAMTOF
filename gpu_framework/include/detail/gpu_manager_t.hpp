@@ -144,7 +144,6 @@ dataSetStorageGPURead<T, TYPE, DIMS>& GPUManager_t::extract_gpu_data_for_kernel(
    dataSetBaseGPURead* dsb_gpu = dss_obj.get_gpu_instance()->get_gpu_dsb_ptr();
    assert(dsb_gpu);
    assert(dsb_gpu->void_data() || !dss_obj.exists()); // The data can be NULL if the object doesn't exist
-   // assert(dsb_gpu->check_offset_dims<T>(DIMS)); // FIXME
 
    // We would be returning this by casting it up using the templates of the GPU variable which might not be the same as the original CPU DSS's templates
    return *(static_cast<dataSetStorageGPURead<T, TYPE, DIMS>*>(dsb_gpu));
@@ -174,7 +173,6 @@ dataSetStorageGPU<T, TYPE, DIMS>& GPUManager_t::extract_gpu_data_for_kernel(data
    dataSetBaseGPU* dsb_gpu = dss_obj.get_gpu_instance()->get_gpu_dsb_ptr();
    assert(dsb_gpu);
    assert(dsb_gpu->void_data() || !dss_obj.exists()); // The data can be NULL if the object doesn't exist
-   // assert(dsb_gpu->check_offset_dims<T>(DIMS)); // FIXME
 
    // We would be returning this by casting it up using the templates of the GPU variable which might not be the same as the original CPU DSS's templates
    return *(static_cast<dataSetStorageGPU<T, TYPE, DIMS>*>(dsb_gpu));
@@ -380,7 +378,7 @@ GPUInstance_t& GPUManager_t::setup_gpu_instance_and_data_ptr(const dataSetStorag
    // If the CPU silo object doesn't exist, don't allocate gpu_data_ptr
    if(!cur_gpu_instance.get_valid_gpu_data() && dss_obj.exists())
    {
-      allocate_gpu_data_ptr(&(cur_gpu_instance), true);
+      allocate_gpu_data_ptr(&cur_gpu_instance, true);
    }
    return cur_gpu_instance;
 }

@@ -71,12 +71,18 @@ void test_dss_gpu()
 
    GDF::submit_to_gpu<kg_compute_pressure>(pressure, volume, n, R, temperature);
 
+#ifdef GPU_DEVELOP // If GPU_DEVELOP mode is ON, we do not need to explicitly bring the data back
    pressure[4] = volume[4];
    pressure[4] = ((n * R * init_temp)/volume[0]);
+#endif
 
    GDF::submit_to_gpu<kg_scale_pressure_and_change_scale>(pressure, scale);
 
    GDF::submit_to_gpu<kg_compute_temperature>(temperature, pressure, n, R, volume);
+
+#ifndef GPU_DEVELOP
+   GDF::transfer_to_cpu_move(pressure, temperature, volume);
+#endif
 
    // Check if the values are correct
    for(int ii = 0; ii < pressure.size(); ii++)
@@ -105,25 +111,79 @@ void test_dss_gpu()
    log_msg("Kernel without SILO variables executed successfully!");
 #endif
 
-   // FIXME
-   //    // ***------- Check the operators for multi-dimensional data in DSSGPU, Also a check of update_gpu_offsets -------*** //
-   //    const strict_fp_t vel_mag = 14.0; // 1^2 + 2^2 + 3^2
-   //    GDF::submit_to_gpu<kg_set_initial_condition>(velocity_strict_fp_t, 1.0, 2.0, 3.0);
-   //    GDF::transfer_to_cpu_copy(velocity_strict_fp_t);
-   //    // Check if the values are correct
-   //    for(int ii = 0; ii < velocity_strict_fp_t.size(); ii++)
-   //    {
-   //       strict_fp_t vel_mag_kk = pow(velocity_strict_fp_t(ii,0), 2) + pow(velocity_strict_fp_t(ii,1), 2) + pow(velocity_strict_fp_t(ii,2), 2);
-   //       if(a_not_equal_b(vel_mag_kk, vel_mag, tol))
-   //       {
-   //          std::string error = "VelocityMagnitude[" + std::to_string(ii) + "] = " + std::to_string(vel_mag_kk) + "instead of " + std::to_string(vel_mag) +
-   //                              ". Operator() check for multi-dimensional GPU data FAILED!";
-   //          log_msg<CDF::LogLevel::ERROR>(error);
-   //       }
-   //    }
-   // #ifndef NDEBUG
-   //    log_msg("Operator() check for multi-dimensional GPU data passed!");
-   // #endif
+   // ***------- Check the operators for multi-dimensional data in DSSGPU, Also a check of update_gpu_offsets -------*** //
+   const strict_fp_t vel_mag = 14.0; // 1^2 + 2^2 + 3^2
+   const uint8_t vel_shape[1] = {3};
+   Cell<strict_fp_t, 1> velocity = m_silo.register_entry<strict_fp_t, CDF::StorageType::CELL, 1>("velocity", vel_shape);
+
+   GDF::submit_to_gpu<kg_set_initial_condition>(velocity, 1.0, 2.0, 3.0);
+
+#ifndef GPU_DEVELOP
+   GDF::transfer_to_cpu_copy(velocity);
+#endif
+
+   // Check if the values are correct
+   for(int ii = 0; ii < velocity.size(); ii++)
+   {
+      strict_fp_t vel_mag_kk = pow(velocity(ii,0), 2) + pow(velocity(ii,1), 2) + pow(velocity(ii,2), 2);
+      if(a_not_equal_b(vel_mag_kk, vel_mag, tol))
+      {
+         std::string error = "VelocityMagnitude[" + std::to_string(ii) + "] = " + std::to_string(vel_mag_kk) + "instead of " + std::to_string(vel_mag) +
+                             ". Operator() check for multi-dimensional GPU data FAILED!";
+         log_msg<CDF::LogLevel::ERROR>(error);
+      }
+   }
+   #ifndef NDEBUG
+   log_progress("Operator() check for multi-dimensional GPU data passed!");
+   #endif
+}
+
+void test_dss_gpu_resize()
+{
+   const strict_fp_t n = 2.0;
+   const strict_fp_t R = 8.314;
+   const strict_fp_t pr_val = (n * R * 300)/(2e-02);
+
+   Cell<strict_fp_t> pressure = m_silo.retrieve_entry<strict_fp_t, CDF::StorageType::CELL>("Pressure");
+   Cell<strict_fp_t> volume = m_silo.retrieve_entry<strict_fp_t, CDF::StorageType::CELL>("Volume");
+   Cell<strict_fp_t> temperature= m_silo.retrieve_entry<strict_fp_t, CDF::StorageType::CELL>("Temperature");
+
+   const int new_cell_count = 512;
+
+   m_silo.resize<CDF::StorageType::CELL>(new_cell_count);
+
+   GDF::transfer_to_cpu_noinit(pressure, volume, temperature);
+   for(int ii = 0; ii < pressure.size(); ii++)
+   {
+      assert(pressure.size() ==  volume.size() && pressure.size() == temperature.size());
+      pressure[ii] = 101325.00;
+      volume[ii] = 2e-02;
+      temperature[ii] = 300.00;
+   }
+
+   GDF::set_gpu_global_local_range({1,1,new_cell_count}, {1,1,new_cell_count/16});
+
+   GDF::transfer_to_gpu_noinit(pressure);
+
+   GDF::submit_to_gpu<kg_compute_pressure>(pressure, volume, n, R, temperature);
+
+#ifndef GPU_DEVELOP
+   GDF::transfer_to_cpu_move(pressure, volume, temperature);
+#endif
+
+   // Check if the values are correct
+   for(int ii = 0; ii < pressure.size(); ii++)
+   {
+      if(a_not_equal_b(pressure[ii], pr_val, tol))
+      {
+         std::string error = "Pressure[" + std::to_string(ii) + "] = " + std::to_string(pressure[ii]) + "instead of " + std::to_string(pr_val) +
+                             ". DSS GPU resize check FAILED!";
+         log_error(error);
+      }
+   }
+#ifndef NDEBUG
+   log_progress("DSS GPU resize check passed!");
+#endif
 }
 
 void test_gpu_pointer_api_funcs()
@@ -315,45 +375,43 @@ int generate_random_CSR(int rows, int cols, strict_fp_t non_zero_percentage, std
    return nnz;
 }
 
-// void test_silo_null() // FIXME
-// {
-//    CVG::upper_string silo_str = silo_key();
-//    const size_t random_idx = 10;
-//    const strict_fp_t init_val = 43.35;
-//    const strict_fp_t subtract_val = 10.33;
-//    Cell<strict_fp_t> silo_nullm_silo.retrieve_entry(silo_str);
-//    assert(!silo_null.exists());  // The variable should not exist
+void test_silo_null()
+{
+   std::string silo_str = "RANDOM_STRING_FOR_SILO_VARIABLE";
+   const size_t random_idx = 10;
+   const strict_fp_t init_val = 43.35;
+   const strict_fp_t subtract_val = 10.33;
+   Cell<strict_fp_t> silo_null = m_silo.retrieve_entry<strict_fp_t, CDF::StorageType::CELL>(silo_str);
+   assert(!silo_null.exists());  // The variable should not exist
 
-//    // The variable can be safely passed on to the transfer call
-//    GDF::transfer_to_gpu_move(silo_null);
-//    GDF::submit_to_gpu<kg_silo_null>(random_idx, silo_null, subtract_val);
-//    GDF::transfer_to_cpu_move(silo_null);
+   // The variable can be safely passed on to the transfer call
+   GDF::submit_to_gpu<kg_silo_null>(random_idx, silo_null, subtract_val);
+#ifndef GPU_DEVELOP
+   GDF::transfer_to_cpu_move(silo_null);
+#endif
+   CellRead<strict_fp_t> silo_null_registered = m_silo.register_entry<strict_fp_t, CDF::StorageType::CELL>(silo_str);
 
-//    CellRead<strict_fp_t> silo_null_registered = silos[0]->registerEntry<CVG::DATA::storageType::cell_center, strict_fp_t>(silo_str,
-//                                                                                                                 "A dummy SILO variable to test "
-//                                                                                                                 "the gpu SILO null functionality",
-//                                                                                                                 "none");
+   assert(silo_null_registered.exists() && silo_null.exists());
+   silo_null[random_idx] = init_val;
 
-//    assert(silo_null_registered.exists() && silo_null.exists());
-//    silo_null[random_idx] = init_val;
+   GDF::submit_to_gpu<kg_silo_null>(random_idx, silo_null, subtract_val);
 
-//    GDF::transfer_to_gpu_move(silo_null);
-//    GDF::submit_to_gpu<kg_silo_null>(random_idx, silo_null, subtract_val);
-//    GDF::transfer_to_cpu_move(silo_null);
+#ifndef GPU_DEVELOP
+   GDF::transfer_to_cpu_move(silo_null);
+#endif
 
-//    // Check results
-//    if(a_not_equal_b(silo_null[random_idx], (init_val - subtract_val), tol))
-//    {
-//       CVG::string error = "silo_null[" + std::to_string(random_idx) + "] = " + std::to_string(silo_null[random_idx])
-//       + " instead of " + std::to_string(init_val - subtract_val) + ". GPU SILO NULL check FAILED";
-//       GDF::log_gpu_silo(GPU_ANY_STREAM, GDF::LoggerInfo(GDF::GPULogLevel::error, silo_key(), GPU_LOG_NUM, error));
-//    }
-// #ifndef NDEBUG
-//    CVG::string message = "GPU SILO NULL check passed!\n";
-//    GDF::log_gpu_silo(GPU_ANY_STREAM, GDF::LoggerInfo(GDF::GPULogLevel::progress, silo_key(), GPU_LOG_NUM, message));
-// #endif
+   // Check results
+   if(a_not_equal_b(silo_null[random_idx], (init_val - subtract_val), tol))
+   {
+      std::string error = std::string("silo_null[") + std::to_string(random_idx) + std::string("] = ") + std::to_string(silo_null[random_idx])
+      + std::string(" instead of ") + std::to_string(init_val - subtract_val) + std::string(". GPU SILO NULL check FAILED");
+      log_error(error);
+   }
+#ifndef NDEBUG
+   log_progress("GPU SILO NULL check passed!");
+#endif
 
-// }
+}
 
 void test_ncpu_ngpu()
 {

@@ -8,6 +8,8 @@
 #include "fp_data_types.h"
 
 #include "gpu_api_functions.h"
+#include "oneMathSPMV.h"
+#include "oneapi/math/blas.hpp"
 
 Solver_base_gpu::Solver_base_gpu():
    ia(m_silo.register_entry<int, CDF::StorageType::VECTOR>("ia")),
@@ -32,7 +34,11 @@ Solver_base_gpu::Solver_base_gpu():
    Q_cell(m_silo.register_entry<strict_fp_t, CDF::StorageType::CELL>("Q_cell")),
    Q_boundary(m_silo.register_entry<strict_fp_t, CDF::StorageType::BOUNDARY>("Q_boundary")),
    residual(m_silo.register_entry<strict_fp_t, CDF::StorageType::CELL>("residual"))
-{}
+{
+   residual_norm = 1e30;
+
+   m_spmv_sys = new GDF::oneMathSPMV();
+}
 
 class kg_set_boundary_conditions
 {
@@ -174,7 +180,7 @@ private:
    mutable CellGPU<strict_fp_t> gpu_Q_cell;
 };
 
-void Solver_base_gpu::update_solution ()
+void Solver_base_gpu::update_solution(const int solver_type, const int num_iter)
 {
    if (m_implicit == false)
    {
@@ -185,7 +191,16 @@ void Solver_base_gpu::update_solution ()
    }
    else
    {
-      jacobi_linear_solver();
+      if(solver_type == 0)
+      {
+         jacobi_linear_solver(num_iter);
+      }
+      else
+      {
+         setup_m_spmv_system();
+
+         bicgstab_linear_solver(num_iter);
+      }
 
       GDF::submit_to_gpu<kg_update_solution_add_dQ_to_Q_cell>(this->num_cells, dQ, Q_cell);
    }
@@ -271,16 +286,177 @@ private:
    mutable CellGPU<strict_fp_t> gpu_dQ;
 };
 
-void Solver_base_gpu::jacobi_linear_solver()
+void Solver_base_gpu::jacobi_linear_solver(const int num_iter)
 {
    GDF::transfer_to_gpu_noinit(dQ_old);
    GDF::memset_gpu_var(dQ_old.gpu_data(), 0, this->num_cells);
 
-   for (unsigned int iter = 0; iter < 10; iter++)
+   for (unsigned int iter = 0; iter < num_iter; iter++)
    {
       GDF::submit_to_gpu<kg_jacobi_linear_solver>(this->num_cells, rhs, A_data, ia, ja, dQ_old, dQ);
       GDF::memcpy_gpu_var(dQ_old.gpu_data(), dQ.gpu_data(), this->num_cells);
    }
+}
+
+void Solver_base_gpu::setup_m_spmv_system()
+{
+   assert(m_spmv_sys);
+   if(m_spmv_sys->is_setup())
+      m_spmv_sys->release_system();
+   
+   GDF::transfer_to_gpu_noinit(dQ);
+   GDF::transfer_to_gpu_move(ia, ja);
+   m_spmv_sys->init_system(num_cells, num_cells, nnz, 1.0, 0.0, ia.gpu_data(),
+               ja.gpu_data(), A_data.gpu_data(), rhs.gpu_data(), dQ.gpu_data());
+}
+
+void Solver_base_gpu::sparse_matvec(const strict_fp_t* const vec_in, strict_fp_t* const vec_out)
+{
+   assert(m_spmv_sys && m_spmv_sys->is_setup());
+   double* const x = const_cast<double* const>(vec_in);
+   double* const y = const_cast<double* const>(vec_out);
+   m_spmv_sys->update_x(num_cells, x);
+   m_spmv_sys->update_y(num_cells, y);
+   m_spmv_sys->compute();
+}
+
+void Solver_base_gpu::dot_product(const strict_fp_t* const x, const strict_fp_t* const y, strict_fp_t* const result)
+{
+   assert(x);
+   assert(y);
+
+   oneapi::math::blas::column_major::dot(GDF::get_gpu_queue(), this->num_cells, x, 1, y, 1, result);
+   GDF::gpu_barrier();
+}
+
+class kg_bicgstab_axpby
+{
+public:
+   kg_bicgstab_axpby(const int num_cells,
+                     const strict_fp_t a,
+                     const strict_fp_t* const x,
+                     const strict_fp_t b,
+                     const strict_fp_t* const y,
+                     strict_fp_t* const result):
+      gpu_num_cells(num_cells),
+      gpu_a(a),
+      gpu_x(x),
+      gpu_b(b),
+      gpu_y(y),
+      gpu_result(result)
+   {}
+
+   void operator()(sycl::nd_item<3> item) const
+   {
+      size_t idx = GDF::get_1d_index(item);
+      size_t stride = GDF::get_1d_stride(item);
+      for(int ii = idx; ii < gpu_num_cells; ii += stride)
+      {
+         gpu_result[ii] = gpu_a*gpu_x[ii] + gpu_b*gpu_y[ii];
+      }
+   }
+
+private:
+   const int gpu_num_cells;
+   const strict_fp_t gpu_a;
+   const strict_fp_t* const gpu_x;
+   const strict_fp_t gpu_b;
+   const strict_fp_t* const gpu_y;
+   strict_fp_t* const gpu_result;
+};
+
+void Solver_base_gpu::bicgstab_linear_solver(const int num_iter)
+{
+   GDF::memset_gpu_var(dQ.gpu_data(), 0, this->num_cells);
+
+   //Memory Allocations
+   strict_fp_t* const r0 = GDF::malloc_gpu_var<strict_fp_t>(this->num_cells);
+   strict_fp_t* const r  = GDF::malloc_gpu_var<strict_fp_t>(this->num_cells);
+   strict_fp_t* const p  = GDF::malloc_gpu_var<strict_fp_t>(this->num_cells);
+   strict_fp_t* const Ap = GDF::malloc_gpu_var<strict_fp_t>(this->num_cells);
+   strict_fp_t* const s  = GDF::malloc_gpu_var<strict_fp_t>(this->num_cells);
+   strict_fp_t* const As = GDF::malloc_gpu_var<strict_fp_t>(this->num_cells);
+
+   strict_fp_t* const p1 = GDF::malloc_gpu_var<strict_fp_t>(this->num_cells);
+   strict_fp_t* const s1 = GDF::malloc_gpu_var<strict_fp_t>(this->num_cells);
+
+   //Constants
+   strict_fp_t* const alpha1 = GDF::malloc_gpu_var<strict_fp_t, true>(1);
+   strict_fp_t* const omega1 = GDF::malloc_gpu_var<strict_fp_t, true>(1);
+   
+   strict_fp_t* const alpha = GDF::malloc_gpu_var<strict_fp_t, true>(1);
+   strict_fp_t* const beta = GDF::malloc_gpu_var<strict_fp_t, true>(1);
+
+   strict_fp_t* const temp = GDF::malloc_gpu_var<strict_fp_t, true>(1);
+
+   // r0 = b-Ax
+   strict_fp_t* const Ax = GDF::malloc_gpu_var<strict_fp_t>(this->num_cells);
+   sparse_matvec(dQ.gpu_data(), Ax);
+   GDF::submit_to_gpu<kg_bicgstab_axpby>(this->num_cells, 1.0, this->rhs.gpu_data(), -1.0, Ax, r0);
+   GDF::free_gpu_var(Ax);
+
+   // r = r0, p = r0
+   GDF::memcpy_gpu_var(r, r0, this->num_cells);
+   GDF::memcpy_gpu_var(p, r0, this->num_cells);
+
+   for(int iter = 0; iter < num_iter; iter++)
+   {
+      // p1 = p
+      GDF::memcpy_gpu_var(p1, p, this->num_cells);
+
+      // alpha1 = r . r0
+      dot_product(r, r0, alpha1);
+
+      // Ap = A * p1
+      sparse_matvec(p1, Ap);
+
+      // alpha = Ap . r0
+      dot_product(Ap, r0, alpha);
+
+      alpha[0] = alpha1[0] / alpha[0];
+      
+      // s = r - alpha * Ap
+      GDF::submit_to_gpu<kg_bicgstab_axpby>(this->num_cells, 1.0, r, -alpha[0], Ap, s);
+
+      // s1 = s
+      GDF::memcpy_gpu_var(s1, s, this->num_cells);
+
+      // As = A * s1
+      sparse_matvec(s1, As);
+
+      // omega1 = (As . s) / (As . As)
+      dot_product(As, s, omega1);
+      dot_product(As, As, temp);
+      omega1[0] /= temp[0];
+
+      // x = x + alpha * p1 + omega1 * s1
+      GDF::submit_to_gpu<kg_bicgstab_axpby>(this->num_cells, 1.0, dQ.gpu_data(), alpha[0], p1, dQ.gpu_data());
+      GDF::submit_to_gpu<kg_bicgstab_axpby>(this->num_cells, 1.0, dQ.gpu_data(), omega1[0], s1, dQ.gpu_data());
+      // r = s - omega1 * As
+      GDF::submit_to_gpu<kg_bicgstab_axpby>(this->num_cells, 1.0, s, -omega1[0], As, r);
+
+      // beta = (r . r0) * alpha / alpha1 / omega1
+      dot_product(r, r0, beta);
+      beta[0] *= alpha[0] / alpha1[0] / omega1[0];
+
+      // p = r + beta * (p - omega1 * Ap)
+      GDF::submit_to_gpu<kg_bicgstab_axpby>(this->num_cells, 1.0, r, beta[0], p, p);
+      GDF::submit_to_gpu<kg_bicgstab_axpby>(this->num_cells, 1.0, p, -(beta[0]*omega1[0]), Ap, p);
+   }
+
+   GDF::free_gpu_var(r);
+   GDF::free_gpu_var(r0);
+   GDF::free_gpu_var(p);
+   GDF::free_gpu_var(Ap);
+   GDF::free_gpu_var(s);
+   GDF::free_gpu_var(As);
+   GDF::free_gpu_var(s1);
+   GDF::free_gpu_var(p1);
+   GDF::free_gpu_var(alpha1);
+   GDF::free_gpu_var(alpha);
+   GDF::free_gpu_var(omega1);
+   GDF::free_gpu_var(beta);
+   GDF::free_gpu_var(temp);
 }
 
 void Solver_base_gpu::allocate_memory(const bool implicit, const Grid & grid)

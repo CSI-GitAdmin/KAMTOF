@@ -7,7 +7,7 @@ template <class T, CDF::StorageType TYPE, uint8_t DIMS>
 class dataSetStorage : public dataSet<T, DIMS>
 {
 public:
-   dataSetStorage(const std::string& name, const uint64_t m_num_entries, const uint8_t* const shape = nullptr, const bool allocate_mem = true);
+   dataSetStorage(const std::string& name, const uint64_t m_num_entries, const uint8_t* const shape, const bool is_unresolved_entry, const bool allocate_mem);
 
    dataSetStorage(const dataSetStorage& other) = delete;
 
@@ -29,6 +29,18 @@ public:
       return dataSet<T, DIMS>::operator[](index);
    }
 
+   template <class... Indices>
+   inline T& operator()(Indices&&... idx)
+   {
+      return dataSet<T,DIMS>::operator () (static_cast<Indices&&>(idx)...);
+   }
+
+   template <class... Indices>
+   const inline T& operator()(Indices&&... idx) const
+   {
+      return dataSet<T,DIMS>::operator () (static_cast<Indices&&>(idx)...);
+   }
+
    inline operator T& ()
    {
       static_assert(TYPE == CDF::StorageType::PARAMETER && DIMS == 0, "This functionality is only supported for parameters");
@@ -44,52 +56,11 @@ public:
    void resize(const uint64_t new_size)
    {
       static_assert(TYPE == CDF::StorageType::VECTOR, "Resizing induvidual SILO variables is only available for VECTOR StorageType");
-      if(new_size == 0)
-      {
-         // Delete the old memory, set the size and byte_size to 0
-         if(dataSetBase::m_data)
-         {
-            delete[] static_cast<char*>(dataSetBase::m_data);
-            dataSetBase::m_data = nullptr;
-            dataSetBase::m_size = 0;
-            dataSetBase::m_byte_size = 0;
-         }
-#ifndef NDEBUG
-         else
-         {
-            assert(dataSetBase::m_size == 0);
-            assert(dataSetBase::m_byte_size == 0);
-         }
-#endif
-      }
-      else
-      {
-         // m_data exists, we need copy it over and free it
-         if(dataSetBase::m_data)
-         {
-            assert(dataSetBase::m_size != 0 && dataSetBase::m_byte_size != 0);
-            // Allocate new data and copy over data
-            T* new_data = new T[new_size]();
-            uint64_t copy_byte_size = sizeof(T) * ((new_size <= dataSetBase::m_size) ? new_size : dataSetBase::m_size);
-            memcpy(new_data, dataSetBase::m_data, copy_byte_size);
-
-
-            // Pointer Swap
-            void* delete_data = dataSetBase::m_data;
-            dataSetBase::m_data = static_cast<void*>(new_data);
-
-            // Free the old data
-            delete[] static_cast<char*>(delete_data);
-         }
-         else // m_data is null, so we do not need to do copy and free
-         {
-            dataSetBase::m_data = new T[new_size]();
-         }
-      }
-
-      dataSetBase::m_size = new_size;
-      dataSetBase::m_byte_size = new_size * CDF::extractor<T>::single_element_byte_size();
+      dataSetBase::resize_internal(new_size);
    }
+
+   void allocate_memory();
+   void deallocate_memory();
 
    inline T* cpu_data()
    {

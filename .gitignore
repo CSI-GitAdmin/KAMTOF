@@ -1,0 +1,5 @@
+# QT Files
+CMakeLists.txt.user*
+
+#VS Code files
+.vscode

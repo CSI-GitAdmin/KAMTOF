@@ -45,6 +45,11 @@ public:
       return residual_norm;
    }
 
+   strict_fp_t get_residual_norm()
+   {
+      return residual_norm;
+   }
+
    Solver_base();
    
 protected:

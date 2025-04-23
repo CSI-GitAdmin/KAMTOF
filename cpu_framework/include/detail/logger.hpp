@@ -44,4 +44,24 @@ void log_msg(std::string msg)
    }
 }
 
+inline void log_error(std::string msg)
+{
+   log_msg<CDF::LogLevel::ERROR>(msg);
+}
+
+inline void log_progress(std::string msg)
+{
+   log_msg<CDF::LogLevel::PROGRESS>(msg);
+}
+
+inline void log_warning(std::string msg)
+{
+   log_msg<CDF::LogLevel::WARNING>(msg);
+}
+
+inline void log_debug(std::string msg)
+{
+   log_msg<CDF::LogLevel::DEBUG>(msg);
+}
+
 #endif // LOGGER_HPP

@@ -30,7 +30,9 @@ Solver_base::Solver_base():
    Q_cell(m_silo.register_entry<strict_fp_t, CDF::StorageType::CELL>("Q_cell")),
    Q_boundary(m_silo.register_entry<strict_fp_t, CDF::StorageType::BOUNDARY>("Q_boundary")),
    residual(m_silo.register_entry<strict_fp_t, CDF::StorageType::CELL>("residual"))
-{}
+{
+   residual_norm = 1e30;
+}
 
 void Solver_base::set_boundary_conditions (const strict_fp_t QL, const strict_fp_t QR,
                                           const strict_fp_t QB, const strict_fp_t QT)
@@ -487,7 +489,7 @@ void Solver_base::compute_system ()
          residual[i] = 0.0;
       }
 
-      // //Time term
+      // Time term
       for (unsigned int i = 0; i < this->num_cells; i++)
       {
          const int crs_index = csr_diag_idx[i];

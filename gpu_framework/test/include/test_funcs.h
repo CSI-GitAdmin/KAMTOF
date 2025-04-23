@@ -4,10 +4,10 @@
 void setup_gpu_globals_test();
 void finalize_gpu_globals_test();
 void test_dss_gpu();
-// void test_dss_gpu_resize();
+void test_dss_gpu_resize();
 void test_gpu_pointer_api_funcs();
 void test_gpu_atomics();
-// void test_silo_null();
+void test_silo_null();
 
 void test_ncpu_ngpu();
 

@@ -4,6 +4,7 @@
 #include "gpu_manager_t.h" // For GPUManager_t functions
 #include "gpu_globals.h" // For gpu_manager
 #include "gpu_atomics.h" // For GPU atomics
+#include "silo.h"
 #include "datasetstoragegpu.h"
 
 namespace GDF
@@ -295,7 +296,7 @@ void csr_matvec(const uint64_t nrow, const uint64_t ncol, const uint64_t nnz, co
 
 void gpu_vec_sum(const uint64_t num_elements, const strict_fp_t* const vec, strict_fp_t * const result);
 
-void transfer_all_silo_vars_to_cpu(const int stream_index, const GDF::transfer_mode_t transfer_mode);
+void transfer_all_silo_vars_to_cpu(const GDF::transfer_mode_t transfer_mode);
 
 void copy_all_silo_vars_to_cpu();
 

@@ -41,6 +41,17 @@ void kg_test_kernel::operator() (sycl::nd_item<3> itm) const
    }
 }
 
+void kg_set_initial_condition::operator() (sycl::nd_item<3> itm) const
+{
+   size_t idx = GDF::get_1d_index(itm);
+   if(idx < velocity.size())
+   {
+      velocity(idx,0) = init_val_x;
+      velocity(idx,1) = init_val_y;
+      velocity(idx,2) = init_val_z;
+   }
+}
+
 void kg_norm2::operator() (sycl::nd_item<3> itm) const
 {
    size_t idx = GDF::get_1d_index(itm);
@@ -85,12 +96,12 @@ void kg_atomics::operator() (sycl::nd_item<3> item) const
    }
 }
 
-// void kg_silo_null::operator ()(sycl::nd_item<3> item) const
-// {
-//    size_t idx = GDF::get_1d_index(item);
-//    // Only do the subtraction if the GPU SILO object exist
-//    if(gpu_silo_null.exists() && idx == gpu_random_idx)
-//    {
-//       gpu_silo_null[gpu_random_idx] -= gpu_subtract_val;
-//    }
-// }
+void kg_silo_null::operator ()(sycl::nd_item<3> item) const
+{
+   size_t idx = GDF::get_1d_index(item);
+   // Only do the subtraction if the GPU SILO object exist
+   if(gpu_silo_null.exists() && idx == gpu_random_idx)
+   {
+      gpu_silo_null[gpu_random_idx] -= gpu_subtract_val;
+   }
+}

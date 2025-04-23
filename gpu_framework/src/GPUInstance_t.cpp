@@ -89,28 +89,28 @@ void GPUInstance_t::set_kernel_transfer_mode(const transfer_mode_t& kernel_trans
 }
 
 
-void GPUInstance_t::invalidate_cpu_data_ptr() // FIXME : Cannot get m_data through regular data getter function as it triggers operator switching
+void GPUInstance_t::invalidate_cpu_data_ptr()
 {
    // If both the data statuses are NOT_ALLOCATED then both temp and real data pointers would be NULL
    // If either of the STATUS is not NOT_ALLOCATED then exactly one of the temp and real data must be NULL
    assert(((cpu_data_status == xpu_data_status_t::NOT_ALLOCATED) && ((gpu_data_status == xpu_data_status_t::NOT_ALLOCATED))) ||
-          ((!m_cpu_dsb->m_data && m_temp_cpu_data) || (m_cpu_dsb->m_data && !m_temp_cpu_data)));
+          ((!m_cpu_dsb->cpu_data() && m_temp_cpu_data) || (m_cpu_dsb->cpu_data() && !m_temp_cpu_data)));
 
    if(!m_temp_cpu_data)
    {
-      m_temp_cpu_data = m_cpu_dsb->m_data;
+      m_temp_cpu_data = m_cpu_dsb->cpu_data();
       m_cpu_dsb->setData(nullptr); // Set the primary SILO data ptr
    }
 }
 
-void GPUInstance_t::validate_cpu_data_ptr() // FIXME : Cannot get m_data through regular data getter function as it triggers operator switching
+void GPUInstance_t::validate_cpu_data_ptr()
 {
    // If both the data statuses are NOT_ALLOCATED then both temp and real data pointers would be NULL
    // If either of the STATUS is not NOT_ALLOCATED then exactly one of the temp and real data must be NULL
    assert(((cpu_data_status == xpu_data_status_t::NOT_ALLOCATED) && ((gpu_data_status == xpu_data_status_t::NOT_ALLOCATED))) ||
-          ((!m_cpu_dsb->m_data && m_temp_cpu_data) || (m_cpu_dsb->m_data && !m_temp_cpu_data)));
+          ((!m_cpu_dsb->cpu_data() && m_temp_cpu_data) || (m_cpu_dsb->cpu_data() && !m_temp_cpu_data)));
 
-   if(!m_cpu_dsb->m_data)
+   if(!m_cpu_dsb->cpu_data())
    {
       m_cpu_dsb->setData(m_temp_cpu_data); // Set the primary SILO data ptr
       m_temp_cpu_data = nullptr;
@@ -144,14 +144,15 @@ void GPUInstance_t::validate_gpu_data_ptr()
       m_temp_gpu_data = nullptr;
    }
 }
+
 const void* GPUInstance_t::get_valid_cpu_data() const
 {
-   return m_temp_cpu_data ? m_temp_cpu_data : m_cpu_dsb->m_data;
+   return m_temp_cpu_data ? m_temp_cpu_data : m_cpu_dsb->cpu_data();
 }
 
 void* GPUInstance_t::get_valid_cpu_data()
 {
-   return m_temp_cpu_data ? m_temp_cpu_data : m_cpu_dsb->m_data;
+   return m_temp_cpu_data ? m_temp_cpu_data : m_cpu_dsb->cpu_data();
 }
 
 const void* GPUInstance_t::get_valid_gpu_data() const

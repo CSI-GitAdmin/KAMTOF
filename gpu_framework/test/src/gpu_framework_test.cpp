@@ -2,12 +2,15 @@
 #include "test_funcs.h" // For test_functions
 #include "gpu_api_functions.h" // For GPU API functions
 #include "mpi_utils.h"
+#include "pagefault_handler.h"
 
 constexpr uint64_t dim = 2;
 
 int main (int argc, char** argv)
 {
    mpi_init(&argc, &argv);
+
+   setup_pagefault_handler();
 
 #ifndef NDEBUG
    if(rank == 0)
@@ -48,10 +51,10 @@ int main (int argc, char** argv)
    if(rank == 0)
    {
       test_dss_gpu();
-      // test_dss_gpu_resize();
+      test_dss_gpu_resize();
       test_gpu_pointer_api_funcs();
       test_gpu_atomics();
-      // test_silo_null();
+      test_silo_null();
    }
 
    mpi_barrier();
