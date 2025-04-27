@@ -11,6 +11,10 @@ void kg_scale_pressure_and_change_scale::operator() (sycl::nd_item<3> itm) const
    if(idx < pressure.size())
    {
       pressure[idx] *= scale[0];
+      if(idx == pressure.size()-1)
+      {
+         scale[0] = idx * 1.0;
+      }
    }
 }
 

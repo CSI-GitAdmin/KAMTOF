@@ -12,7 +12,7 @@ void mpi_init(int* argc_ptr, char*** argv_ptr)
       MPI_Init(argc_ptr, argv_ptr);
 
    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-   MPI_Comm_rank(MPI_COMM_WORLD, &numprocs);
+   MPI_Comm_size(MPI_COMM_WORLD, &numprocs);
 
    MPI_Comm local_comm;
    MPI_Comm_split_type(MPI_COMM_WORLD, MPI_COMM_TYPE_SHARED, rank, MPI_INFO_NULL, &local_comm);

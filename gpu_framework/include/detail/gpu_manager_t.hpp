@@ -143,7 +143,7 @@ dataSetStorageGPURead<T, TYPE, DIMS>& GPUManager_t::extract_gpu_data_for_kernel(
    assert(dss_obj.get_gpu_instance());
    dataSetBaseGPURead* dsb_gpu = dss_obj.get_gpu_instance()->get_gpu_dsb_ptr();
    assert(dsb_gpu);
-   assert(dsb_gpu->void_data() || !dss_obj.exists()); // The data can be NULL if the object doesn't exist
+   assert(dsb_gpu->void_data() || !dss_obj.exists() || (dss_obj.size() == 0)); // The data can be NULL either if the object doesn't exist (or) size is 0
 
    // We would be returning this by casting it up using the templates of the GPU variable which might not be the same as the original CPU DSS's templates
    return *(static_cast<dataSetStorageGPURead<T, TYPE, DIMS>*>(dsb_gpu));
@@ -172,7 +172,7 @@ dataSetStorageGPU<T, TYPE, DIMS>& GPUManager_t::extract_gpu_data_for_kernel(data
    assert(dss_obj.get_gpu_instance());
    dataSetBaseGPU* dsb_gpu = dss_obj.get_gpu_instance()->get_gpu_dsb_ptr();
    assert(dsb_gpu);
-   assert(dsb_gpu->void_data() || !dss_obj.exists()); // The data can be NULL if the object doesn't exist
+   assert(dsb_gpu->void_data() || !dss_obj.exists() || (dss_obj.size() == 0)); // The data can be NULL either if the object doesn't exist (or) size is 0
 
    // We would be returning this by casting it up using the templates of the GPU variable which might not be the same as the original CPU DSS's templates
    return *(static_cast<dataSetStorageGPU<T, TYPE, DIMS>*>(dsb_gpu));
@@ -206,14 +206,16 @@ dataSetStorageGPU<T, TYPE, DIMS>& GPUManager_t::extract_gpu_data_for_extractor(d
    return *(static_cast<dataSetStorageGPU<T, TYPE, DIMS>*>(dsb_gpu));
 }
 
-template<typename T, typename... Us>
+template<typename T, bool async, typename... Us>
 void GPUManager_t::submit_to_gpu_internal(Us&&... args)
 {
    callExtractorIfExists<T>(args...);
 
    // Call the actual kernel
    m_que.parallel_for(sycl::nd_range<3>{global_range,local_range}, T{extract_gpu_data_for_kernel(std::forward<Us>(args))...});
-   m_que.wait();
+
+   if constexpr (!async)
+      m_que.wait();
 }
 
 
@@ -290,18 +292,23 @@ T* GPUManager_t::malloc_gpu_var_impl(const size_t& num_elements)
 template <class T>
 void GPUManager_t::memcpy_gpu_var_internal(T* dest, const T * const src, const size_t& num_elements)
 {
-   assert(src);
-   assert(dest);
-   if constexpr (std::is_same<T, void>::value)
-      m_que.memcpy(dest, src, num_elements).wait();
-   else
-      m_que.memcpy(dest, src, num_elements*sizeof(T)).wait();
+   if(num_elements != 0)
+   {
+      assert(src);
+      assert(dest);
+      if constexpr (std::is_same<T, void>::value)
+         m_que.memcpy(dest, src, num_elements).wait();
+      else
+         m_que.memcpy(dest, src, num_elements*sizeof(T)).wait();
+   }
    return;
 }
 
 template <class T>
 void GPUManager_t::free_gpu_var_internal(T* gpu_var)
 {
+   if(!gpu_var)
+      return;
 #ifdef GPU_MEM_LOG
    auto it = gpu_mem_map.find(gpu_var);
    if(it == gpu_mem_map.end())
@@ -376,7 +383,7 @@ GPUInstance_t& GPUManager_t::setup_gpu_instance_and_data_ptr(const dataSetStorag
    GPUInstance_t& cur_gpu_instance= *(const_cast<GPUInstance_t*>(dss_obj.get_gpu_instance()));
 
    // If the CPU silo object doesn't exist, don't allocate gpu_data_ptr
-   if(!cur_gpu_instance.get_valid_gpu_data() && dss_obj.exists())
+   if(dss_obj.exists() && (cur_gpu_instance.get_xpu_data_status(xpu_t::GPU) == xpu_data_status_t::NOT_ALLOCATED))
    {
       allocate_gpu_data_ptr(&cur_gpu_instance, true);
    }

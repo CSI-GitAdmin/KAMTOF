@@ -91,10 +91,10 @@ void GPUInstance_t::set_kernel_transfer_mode(const transfer_mode_t& kernel_trans
 
 void GPUInstance_t::invalidate_cpu_data_ptr()
 {
-   // If both the data statuses are NOT_ALLOCATED then both temp and real data pointers would be NULL
+   // If both the data statuses are NOT_ALLOCATED (or) if the size is 0 then both temp and real data pointers would be NULL
    // If either of the STATUS is not NOT_ALLOCATED then exactly one of the temp and real data must be NULL
    assert(((cpu_data_status == xpu_data_status_t::NOT_ALLOCATED) && ((gpu_data_status == xpu_data_status_t::NOT_ALLOCATED))) ||
-          ((!m_cpu_dsb->cpu_data() && m_temp_cpu_data) || (m_cpu_dsb->cpu_data() && !m_temp_cpu_data)));
+          ((!m_cpu_dsb->cpu_data() && m_temp_cpu_data) || (m_cpu_dsb->cpu_data() && !m_temp_cpu_data) || (m_cpu_dsb->size() == 0)));
 
    if(!m_temp_cpu_data)
    {
@@ -105,10 +105,10 @@ void GPUInstance_t::invalidate_cpu_data_ptr()
 
 void GPUInstance_t::validate_cpu_data_ptr()
 {
-   // If both the data statuses are NOT_ALLOCATED then both temp and real data pointers would be NULL
+   // If both the data statuses are NOT_ALLOCATED (or) if the size is 0 then both temp and real data pointers would be NULL
    // If either of the STATUS is not NOT_ALLOCATED then exactly one of the temp and real data must be NULL
    assert(((cpu_data_status == xpu_data_status_t::NOT_ALLOCATED) && ((gpu_data_status == xpu_data_status_t::NOT_ALLOCATED))) ||
-          ((!m_cpu_dsb->cpu_data() && m_temp_cpu_data) || (m_cpu_dsb->cpu_data() && !m_temp_cpu_data)));
+          ((!m_cpu_dsb->cpu_data() && m_temp_cpu_data) || (m_cpu_dsb->cpu_data() && !m_temp_cpu_data) || (m_cpu_dsb->size() == 0)));
 
    if(!m_cpu_dsb->cpu_data())
    {
@@ -119,10 +119,10 @@ void GPUInstance_t::validate_cpu_data_ptr()
 
 void GPUInstance_t::invalidate_gpu_data_ptr()
 {
-   // If both the data statuses are NOT_ALLOCATED then both temp and real data pointers would be NULL
+   // If both the data statuses are NOT_ALLOCATED (or) if the size is 0 then both temp and real data pointers would be NULL
    // If either of the STATUS is not NOT_ALLOCATED then exactly one of the temp and real data must be NULL
    assert(((cpu_data_status == xpu_data_status_t::NOT_ALLOCATED) && ((gpu_data_status == xpu_data_status_t::NOT_ALLOCATED))) ||
-          ((!m_gpu_dss->void_data() && m_temp_gpu_data) || (m_gpu_dss->void_data() && !m_temp_gpu_data)));
+          ((!m_cpu_dsb->cpu_data() && m_temp_cpu_data) || (m_cpu_dsb->cpu_data() && !m_temp_cpu_data) || (m_cpu_dsb->size() == 0)));
 
    if(!m_temp_gpu_data)
    {
@@ -133,10 +133,10 @@ void GPUInstance_t::invalidate_gpu_data_ptr()
 
 void GPUInstance_t::validate_gpu_data_ptr()
 {
-   // If both the data statuses are NOT_ALLOCATED then both temp and real data pointers would be NULL
+   // If both the data statuses are NOT_ALLOCATED (or) if the size is 0 then both temp and real data pointers would be NULL
    // If either of the STATUS is not NOT_ALLOCATED then exactly one of the temp and real data must be NULL
    assert(((cpu_data_status == xpu_data_status_t::NOT_ALLOCATED) && ((gpu_data_status == xpu_data_status_t::NOT_ALLOCATED))) ||
-          ((!m_gpu_dss->void_data() && m_temp_gpu_data) || (m_gpu_dss->void_data() && !m_temp_gpu_data)));
+          ((!m_cpu_dsb->cpu_data() && m_temp_cpu_data) || (m_cpu_dsb->cpu_data() && !m_temp_cpu_data) || (m_cpu_dsb->size() == 0)));
 
    if(!m_gpu_dss->void_data())
    {

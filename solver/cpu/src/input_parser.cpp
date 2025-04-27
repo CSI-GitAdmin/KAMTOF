@@ -17,6 +17,12 @@ InputParser::InputParser(std::string input_file) : input_filename(input_file)
 }
 
 /**
+ * @brief InputParser: Constructor for setting default values for input options in the absence of an input file.
+ * @param input_filename: Name of input file
+*/
+InputParser::InputParser() {};
+
+/**
  * @brief read_inputs: Read input file and store data in an input_struct
  * @param input_filename: Name of input file
 */

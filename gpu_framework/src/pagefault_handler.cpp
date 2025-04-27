@@ -1,5 +1,6 @@
 #include <sys/mman.h>
 #include <string.h>
+#include <numeric>
 
 #include "logger.hpp"
 #include "datasetbase.h"
@@ -38,23 +39,35 @@ void deallocate_page_aligned_memory(void* m_data, const uint64_t allocation_size
 }
 
 /*
- * This is the function that
+ * This is the function that is invoked whenever a segfault is encountered by the program.
+ *
+ * This function identifies if the segfault encountered is triggered by the pagefault mechanism
+ * employed by the GPU framework for automatic data transfer to CPU and transfer the data if needed
+ *
+ * Other segfaults are handeled as regular errors
+ *
 */
 void pagefault_handler(int sig, siginfo_t *info, void *context)
 {
    void *fault_addr = info->si_addr;
+
    if(fault_addr)
    {
-      // Pick the address which is greater than (or) equal to the fault address
-      std::set<std::pair<void*, dataSetBase*>>::iterator it = dsb_addr_set.upper_bound(std::make_pair(fault_addr, nullptr));
+      /*
+       * Pick the address which is greater than (or) equal to the fault address
+       *
+       * By passsing the largest possible pointer address, it is made sure that if fault_addr == one of DSB data pointer's address,
+       * we get the element with starting_addr strictly > fault_ddr
+      */
+      std::set<std::pair<void*, dataSetBase*>>::iterator it = dsb_addr_set.upper_bound(std::make_pair(fault_addr, reinterpret_cast<dataSetBase*>(std::numeric_limits<uintptr_t>::max())));
 
-      bool override_decrement = false;
+      bool override_decrement = false; // If the triggering address belongs to the last element of the set
 
       // If the fault occured at non zero index of the last element, the above search will return end() but we still need to verify if is in the address range of the last element
       if(it == dsb_addr_set.end())
       {
          std::set<std::pair<void*, dataSetBase*>>::iterator last_element = --dsb_addr_set.end();
-         void* bounding_address = static_cast<void*>(static_cast<char*>(last_element->first) + last_element->second->get_allocation_size());
+         void* bounding_address = static_cast<void*>(static_cast<char*>(last_element->first) + last_element->second->byte_size());
          if(fault_addr <= bounding_address)
          {
             it = last_element;
@@ -62,41 +75,37 @@ void pagefault_handler(int sig, siginfo_t *info, void *context)
          }
       }
 
-      if(it != dsb_addr_set.end()) // If not found in the list, then it is general SEGFAULT which we do not handle and pass on to mpi_abort()
+      // If not found in the list (or) if it is the first member of the list without overriding, then it is general SEGFAULT which we do not handle and pass on to mpi_abort()
+      if(it != dsb_addr_set.end() || (!override_decrement && it == dsb_addr_set.begin()))
       {
-         if((it->first != fault_addr) && !override_decrement) // If the fault address was exactly found in the set, then we do not need to decrement the iterator
+         if(!override_decrement)
+         {
+            assert(it->first > fault_addr);
             it--;
+         }
          dataSetBase* const dsb_entry = it->second;
-         if(in_const_operator)
+         void* bounding_address = static_cast<void*>(static_cast<char*>(it->first) + it->second->byte_size());
+         if(fault_addr <= bounding_address) // If the fault_addr is in the holes/gap between the two entries in an array, it is a non GPU segfault
          {
-            if(mprotect(dsb_entry->cpu_data(), dsb_entry->get_allocation_size(), PROT_READ) == -1) // Unlock the data for reading
-            {
-               log_msg<CDF::LogLevel::ERROR>(std::string("Failure while unlocking data in pagefault handler for variable: ") + dsb_entry->name());
-            }
+            dsb_entry->transfer_to_cpu(in_const_operator); // Transfer the variable to CPU
+            in_const_operator = false;
+            return;
          }
-         else
-         {
-            if(mprotect(dsb_entry->cpu_data(), dsb_entry->get_allocation_size(), PROT_READ | PROT_WRITE) == -1) // Unlock the data for reading and writing
-            {
-               log_msg<CDF::LogLevel::ERROR>(std::string("Failure while unlocking data in pagefault handler for variable: ") + dsb_entry->name());
-            }
-         }
-         dsb_entry->transfer_to_cpu(in_const_operator); // Transfer the variable to CPU
-         return;
       }
    }
-   else // Non GPU segfaults
-   {  
-      char err_msg[200];
-      sprintf(err_msg, "Caught SIGSEGV at address: %p", fault_addr);
-      log_msg<CDF::LogLevel::ERROR>(err_msg);
-   }
+
+   // Only non-GPU realted seg faults make it to here
+   char err_msg[200];
+   sprintf(err_msg, "Caught SIGSEGV at address: %p", fault_addr);
+   log_msg<CDF::LogLevel::ERROR>(err_msg);
 }
 
 // Setup the the custom pagefault handler
 void setup_pagefault_handler()
 {
-   system_page_size = sysconf(_SC_PAGESIZE); // Set the system page size
+   in_const_operator = 0; // This should only be changed to 0,1 in the data access calls and reset to 0 in pagefault handler
+
+   system_page_size = sysconf(_SC_PAGESIZE); // Get the system page size
 
    struct sigaction sa;
    memset(&sa, 0, sizeof(sa)); // Zero out the struct completely

@@ -10,6 +10,11 @@
 namespace GDF
 {
 
+inline void set_gpu_global_local_range(const uint64_t glob_range, const uint64_t locl_range)
+{
+   gpu_manager->set_global_local_range_internal({glob_range}, {locl_range});
+}
+
 inline void set_gpu_global_local_range(const uint64_t (&glob_range)[1], const uint64_t (&locl_range)[1])
 {
    gpu_manager->set_global_local_range_internal(glob_range, locl_range);
@@ -96,6 +101,12 @@ void submit_to_gpu(Us&&... args)
 }
 
 template<typename T, typename... Us>
+void submit_to_gpu_async(Us&&... args)
+{
+   gpu_manager->submit_to_gpu_internal<T, true>(args...);
+}
+
+template<typename T, typename... Us>
 void submit_to_gpu_single_workgroup(Us&&... args)
 {
    gpu_manager->submit_to_gpu_single_workgroup_internal<T>(args...);
@@ -145,7 +156,9 @@ T* malloc_gpu_var(const uint64_t& num_elements)
 template <class T>
 void memcpy_gpu_var(T* const dest, const T * const src, const uint64_t& num_elements)
 {
-   assert(num_elements >= 0);
+   if(num_elements == 0)
+      return;
+   assert(src && dest);
    if(is_usm_pointer(src))
    {
       if(is_usm_pointer(dest))
@@ -165,7 +178,7 @@ void memcpy_gpu_var(T* const dest, const T * const src, const uint64_t& num_elem
       }
       else
       {
-         log_msg("Error in memcpy_gpu_var: Memcpy between two CPU pointers should use memcpy and not memcpy_gpu_var");
+         log_error("Error in memcpy_gpu_var: Memcpy between two CPU pointers should use memcpy and not memcpy_gpu_var");
       }
    }
    gpu_manager->memcpy_gpu_var_internal<T>(dest, src, num_elements);
@@ -231,7 +244,7 @@ void memcpy_gpu_var(dataSetStorage<T, TYPE, DIMS>& dss_dest,const dataSetStorage
          GDF::transfer_to_gpu_readonly(dss_src);
       }
    }
-   assert(src_gpu_instance);
+   assert(dss_src.get_gpu_instance());
    const T* const src_data = dss_src.gpu_data();
    assert(src_data);
 
@@ -311,13 +324,15 @@ void transfer_vars_to_gpu_internal(T&& m_data)
 template <class T, CDF::StorageType TYPE, uint8_t DIMS /* = ZEROD */>
 void transfer_vars_to_gpu_internal(dataSetStorageGPU<T, TYPE, DIMS>& dss_obj)
 {
-   GDF::transfer_to_gpu(dss_obj.cpu_dss_ptr, transfer_mode_t::MOVE);
+   if(dss_obj.cpu_dss_ptr->get_xpu_data_status(xpu_t::GPU) != xpu_data_status_t::TEMP_WRITE)
+      GDF::transfer_to_gpu(dss_obj.cpu_dss_ptr, transfer_mode_t::MOVE);
 }
 
 template <class T, CDF::StorageType TYPE, uint8_t DIMS /* = ZEROD */>
 void transfer_vars_to_gpu_internal(const dataSetStorageGPU<T, TYPE, DIMS>& dss_obj)
 {
-   GDF::transfer_to_gpu(dss_obj.cpu_dss_ptr, transfer_mode_t::READ_ONLY);
+   if(dss_obj.cpu_dss_ptr->get_xpu_data_status(xpu_t::GPU) != xpu_data_status_t::TEMP_WRITE)
+      GDF::transfer_to_gpu(dss_obj.cpu_dss_ptr, transfer_mode_t::READ_ONLY);
 }
 
 template<uint8_t N, typename... Us>

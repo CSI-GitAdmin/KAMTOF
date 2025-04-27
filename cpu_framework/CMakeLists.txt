@@ -31,6 +31,6 @@ if (BUILD_TEST)
       ${CPU_FRAMEWORK_TEST_DIR}/include)
 
    target_link_libraries( cpu_framework_test PUBLIC
-      cpu_framework)
+      cpu_framework MPI::MPI_CXX)
 
 endif()

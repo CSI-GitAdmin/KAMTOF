@@ -55,6 +55,43 @@ void finalize_gpu_globals_test()
    gpu_manager = nullptr;
 }
 
+void setup_cdf_vars_for_gpu_framework_tests()
+{
+   uint64_t cell_count = 256;
+   m_silo.resize<CDF::StorageType::CELL>(cell_count);
+
+   Cell<strict_fp_t> pressure = m_silo.register_entry<strict_fp_t, CDF::StorageType::CELL>("Pressure");
+   Cell<strict_fp_t> volume = m_silo.register_entry<strict_fp_t, CDF::StorageType::CELL>("Volume");
+   Cell<strict_fp_t> temperature = m_silo.register_entry<strict_fp_t, CDF::StorageType::CELL>("Temperature");
+
+   Cell<strict_fp_t> P = m_silo.register_entry<strict_fp_t, CDF::StorageType::CELL>("variable_P");
+   Cell<strict_fp_t> V = m_silo.register_entry<strict_fp_t, CDF::StorageType::CELL>("variable_V");
+   Cell<strict_fp_t> T = m_silo.register_entry<strict_fp_t, CDF::StorageType::CELL>("variable_T");
+
+   for(int ii = 0; ii < pressure.size(); ii++)
+   {
+      assert(pressure.size() ==  volume.size() && pressure.size() == temperature.size());
+      pressure[ii] = 101325.00;
+      volume[ii] = 2e-02;
+      temperature[ii] = 300.00;
+
+      P[ii] = 0.0;
+      V[ii] = volume[ii];
+      T[ii] = temperature[ii];
+   }
+}
+
+void test_global_local_range_setup()
+{
+   uint64_t cell_count = m_silo.get_size<CDF::StorageType::CELL>();
+   uint64_t glob_range, locl_range;
+   assert((cell_count % 32)  == 0);
+   glob_range = cell_count;
+   locl_range = cell_count/2;
+
+   GDF::set_gpu_global_local_range(glob_range, locl_range);
+}
+
 void test_dss_gpu()
 {
    // ***------- Check a kernel with a SILO vars -------*** //
@@ -76,7 +113,20 @@ void test_dss_gpu()
    pressure[4] = ((n * R * init_temp)/volume[0]);
 #endif
 
+   GDF::transfer_to_gpu_copy(scale);
    GDF::submit_to_gpu<kg_scale_pressure_and_change_scale>(pressure, scale);
+
+   if(a_not_equal_b(scale, R, tol))
+   {
+      log_error("'transfer_to_gpu_copy' functionality not working : 'scale[0]' value should be " + std::to_string(R) + " instead of " + std::to_string(scale[0]));
+   }
+#ifndef NDEBUG
+   else
+   {
+      log_progress("'transfer_to_gpu_copy' functionality working!");
+   }
+#endif
+   GDF::transfer_to_cpu_move(scale);
 
    GDF::submit_to_gpu<kg_compute_temperature>(temperature, pressure, n, R, volume);
 
@@ -88,13 +138,13 @@ void test_dss_gpu()
    for(int ii = 0; ii < pressure.size(); ii++)
    {
       assert(pressure.size() ==  temperature.size());
-      if(a_not_equal_b(pressure[ii], pr_val, tol))
+      if(a_not_equal_b(pressure[ii], pr_val, test_tol))
       {
          std::string error = "Pressure[" + std::to_string(ii) + "] = " + std::to_string(pressure[ii]) + " instead of " + std::to_string(pr_val) +
                              ". Kernel compute_pressure that does PV=nRT on GPU did NOT match CPU values!";
          log_msg<CDF::LogLevel::ERROR>(error);
       }
-      if(a_not_equal_b(temperature[ii], init_temp*scale[0], tol))
+      if(a_not_equal_b(temperature[ii], init_temp*scale[0], test_tol))
       {
          std::string error = "Temperature[" + std::to_string(ii) + "] = " + std::to_string(temperature[ii]) + " instead of " + std::to_string(init_temp*scale[0]) +
                              ". Kernel compute_temperature that does PV=nRT on GPU did NOT match CPU values!";
@@ -126,7 +176,7 @@ void test_dss_gpu()
    for(int ii = 0; ii < velocity.size(); ii++)
    {
       strict_fp_t vel_mag_kk = pow(velocity(ii,0), 2) + pow(velocity(ii,1), 2) + pow(velocity(ii,2), 2);
-      if(a_not_equal_b(vel_mag_kk, vel_mag, tol))
+      if(a_not_equal_b(vel_mag_kk, vel_mag, test_tol))
       {
          std::string error = "VelocityMagnitude[" + std::to_string(ii) + "] = " + std::to_string(vel_mag_kk) + "instead of " + std::to_string(vel_mag) +
                              ". Operator() check for multi-dimensional GPU data FAILED!";
@@ -174,7 +224,7 @@ void test_dss_gpu_resize()
    // Check if the values are correct
    for(int ii = 0; ii < pressure.size(); ii++)
    {
-      if(a_not_equal_b(pressure[ii], pr_val, tol))
+      if(a_not_equal_b(pressure[ii], pr_val, test_tol))
       {
          std::string error = "Pressure[" + std::to_string(ii) + "] = " + std::to_string(pressure[ii]) + "instead of " + std::to_string(pr_val) +
                              ". DSS GPU resize check FAILED!";
@@ -221,13 +271,13 @@ void test_gpu_pointer_api_funcs()
    cpu_local_result = sqrt(cpu_local_result);
 
    // Check results
-   if(a_not_equal_b(cpu_local_result, gpu_result_device, tol))
+   if(a_not_equal_b(cpu_local_result, gpu_result_device, test_tol))
    {
       std::string error = "gpu_result_device = " + std::to_string(gpu_result_device) + " instead of " + std::to_string(cpu_local_result) +
                           ". Raw pointer API functions check FAILED while using malloc_device!";
       log_msg<CDF::LogLevel::ERROR>(error);
    }
-   if(a_not_equal_b(cpu_local_result, gpu_result_shared, tol))
+   if(a_not_equal_b(cpu_local_result, gpu_result_shared, test_tol))
    {
       std::string error = "gpu_result_shared = " + std::to_string(gpu_result_shared) + " instead of " + std::to_string(cpu_local_result) +
                           ". Raw pointer API functions check FAILED while using malloc_shared!";
@@ -401,7 +451,7 @@ void test_silo_null()
 #endif
 
    // Check results
-   if(a_not_equal_b(silo_null[random_idx], (init_val - subtract_val), tol))
+   if(a_not_equal_b(silo_null[random_idx], (init_val - subtract_val), test_tol))
    {
       std::string error = std::string("silo_null[") + std::to_string(random_idx) + std::string("] = ") + std::to_string(silo_null[random_idx])
       + std::string(" instead of ") + std::to_string(init_val - subtract_val) + std::string(". GPU SILO NULL check FAILED");
@@ -433,25 +483,45 @@ void test_ncpu_ngpu()
    }
    MPI_Allreduce(&cpu_local_result, &cpu_global_result, 1, MPI_STRICT_FP_T, MPI_SUM, MPI_COMM_WORLD);
 
-   log_msg("CPU results : total = " + std::to_string(cpu_local_result) +" and the gloabl total = " + std::to_string(cpu_global_result));
+   log_msg("CPU results : total = " + std::to_string(cpu_local_result) +" and the global total = " + std::to_string(cpu_global_result));
 
    // Allocate two variables on different ranks
-   strict_fp_t* local_result = GDF::malloc_gpu_var<strict_fp_t, true>(1);
-   strict_fp_t* global_result = GDF::malloc_gpu_var<strict_fp_t, true>(1);
+   strict_fp_t* gpu_local_result = GDF::malloc_gpu_var<strict_fp_t, true>(1);
+   strict_fp_t* gpu_global_result = GDF::malloc_gpu_var<strict_fp_t, true>(1);
    strict_fp_t* my_vec = GDF::malloc_gpu_var<strict_fp_t>(vec_size);
 
    GDF::memcpy_gpu_var(my_vec, my_vec_cpu.data(), vec_size);
-   GDF::dot_product(vec_size, my_vec, my_vec, local_result);
-   MPI_Allreduce(local_result, global_result, 1, MPI_STRICT_FP_T, MPI_SUM, MPI_COMM_WORLD);
+   GDF::dot_product(vec_size, my_vec, my_vec, gpu_local_result);
+   MPI_Allreduce(gpu_local_result, gpu_global_result, 1, MPI_STRICT_FP_T, MPI_SUM, MPI_COMM_WORLD);
 
-   log_msg("GPU results : local total = " + std::to_string(local_result[0]) +" and the global total = " + std::to_string(global_result[0]));
+   log_msg("GPU results : local total = " + std::to_string(gpu_local_result[0]) +" and the global total = " + std::to_string(gpu_global_result[0]));
 
-   if(a_not_equal_b(cpu_global_result, global_result[0], tol))
+   if(a_not_equal_b(cpu_global_result, gpu_global_result[0], test_tol))
    {
       log_msg<CDF::LogLevel::ERROR>("Error in GPU MPI_Allreduce test!");
    }
 
-   GDF::free_gpu_var(local_result);
-   GDF::free_gpu_var(global_result);
+   GDF::free_gpu_var(gpu_local_result);
+   GDF::free_gpu_var(gpu_global_result);
    GDF::free_gpu_var(my_vec);
+}
+
+void backend_testing(bool run_backend_tests)
+{
+   if(!run_backend_tests)
+      return;
+
+   if(rank == 0)
+   {
+      test_global_local_range_setup();
+      test_dss_gpu();
+      test_dss_gpu_resize();
+      test_gpu_pointer_api_funcs();
+      test_gpu_atomics();
+      test_silo_null();
+   }
+
+   mpi_barrier();
+
+   test_ncpu_ngpu();
 }

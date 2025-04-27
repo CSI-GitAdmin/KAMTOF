@@ -36,7 +36,7 @@ void oneMathSPMV::init_system(const int64_t nrows, const int64_t ncols, const in
                                              oneapi::math::sparse::matrix_property::sorted);
    
    // Create and initialize dense vector handles
-   oneapi::math::sparse::init_dense_vector(m_que, &x_handle, nrows, vec);
+   oneapi::math::sparse::init_dense_vector(m_que, &x_handle, ncols, vec);
    oneapi::math::sparse::init_dense_vector(m_que, &y_handle, nrows, result);
    
    // Create operation descriptor

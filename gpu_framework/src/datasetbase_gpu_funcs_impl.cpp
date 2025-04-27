@@ -16,15 +16,20 @@ void dataSetBase::deallocate_gpu_data_ptr()
       assert(!gpu_instance->get_gpu_dsb_ptr()->void_data());
       return;
    }
+   if(m_size == 0)
+   {
+      assert(gpu_instance->get_gpu_dsb_ptr()->void_data() == nullptr);
+      gpu_instance->get_gpu_dsb_ptr()->free_offsets();
+   }
+   else
+   {
+      // Validate the GPU data pointer
+      gpu_instance->validate_gpu_data_ptr();
 
-   // Validate the GPU data pointer
-   gpu_instance->validate_gpu_data_ptr();
-
-   assert(gpu_instance->get_gpu_dsb_ptr()->void_data());
-
-   GDF::free_gpu_var(gpu_instance->get_gpu_dsb_ptr()->void_data());
-   gpu_instance->get_gpu_dsb_ptr()->set_data(nullptr);
-   gpu_instance->get_gpu_dsb_ptr()->free_offsets();
+      GDF::free_gpu_var(gpu_instance->get_gpu_dsb_ptr()->void_data());
+      gpu_instance->get_gpu_dsb_ptr()->set_data(nullptr);
+      gpu_instance->get_gpu_dsb_ptr()->free_offsets();
+   }
 
    gpu_instance->set_xpu_data_status(GDF::xpu_t::GPU, GDF::xpu_data_status_t::NOT_ALLOCATED);
 
@@ -83,13 +88,13 @@ const GDF::xpu_data_status_t& dataSetBase::get_xpu_data_status(const GDF::xpu_t&
 
 void dataSetBase::transfer_to_cpu(bool read_only) const
 {
-   if(!read_only)
+   if(read_only)
    {
-      GDF::transfer_to_cpu(this, GDF::transfer_mode_t::MOVE);
+      GDF::transfer_to_cpu(this, GDF::transfer_mode_t::READ_ONLY);
    }
    else
    {
-      GDF::transfer_to_cpu(this, GDF::transfer_mode_t::READ_ONLY);
+      GDF::transfer_to_cpu(this, GDF::transfer_mode_t::MOVE);
    }
 }
 
@@ -112,6 +117,16 @@ void dataSetBase::allocate_page_aligned_memory_internal(const uint64_t byte_size
    m_data = allocated_data.first;
    allocation_size = allocated_data.second;
 
+#ifndef NDEBUG // Check if the dsb pointer already exist
+   for(std::set<std::pair<void*, dataSetBase*>>::iterator it = dsb_addr_set.begin(); it != dsb_addr_set.end(); it++)
+   {
+      if(it->second == this)
+      {
+         log_error("Trying to add the same DSB pointer " + m_name +" multiple times in the dsb_addr_set!");
+      }
+   }
+#endif
+
    if(!dsb_addr_set.insert(std::make_pair(m_data, this)).second) // Add this variable and it's m_data to the dsb_addr_set
    {
       log_msg<CDF::LogLevel::ERROR>(std::string("Duplicate insert in dsb_addr_set for variable ") + m_name);
@@ -129,7 +144,7 @@ void dataSetBase::deallocate_page_aligned_memory_internal()
    }
 }
 
-void dataSetBase::copy_over_and_resize(const uint64_t new_byte_size)
+void dataSetBase::copy_over_and_resize_page_aligned_memory(const uint64_t new_byte_size)
 {
    assert(m_size != 0 && m_byte_size != 0);
    // Allocate new data and copy over data

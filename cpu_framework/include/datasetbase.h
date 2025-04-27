@@ -74,7 +74,7 @@ public:
       assert(index < m_size && !m_offsets); // Ensure that the index is within bounds
 #endif
 #ifdef GPU_DEVELOP
-      in_const_operator = 0;
+      in_const_operator = false;
 #endif
       return static_cast<T*>(m_data)[index];
    }
@@ -87,7 +87,7 @@ public:
       assert(index < m_size && !m_offsets); // Ensure that the index is within bounds
 #endif
 #ifdef GPU_DEVELOP
-      in_const_operator = 1;
+      in_const_operator = true;
 #endif
       return static_cast<T*>(m_data)[index];
    }
@@ -142,7 +142,7 @@ protected:
    void deallocate_gpu_data_ptr();
    void allocate_page_aligned_memory_internal(const uint64_t byte_size);
    void deallocate_page_aligned_memory_internal();
-   void copy_over_and_resize(const uint64_t new_byte_size);
+   void copy_over_and_resize_page_aligned_memory(const uint64_t new_byte_size);
    void deallocate_gpu_instance();
    void destruct_gpu_instance();
    void* get_gpu_void_data();

@@ -17,7 +17,7 @@ target_include_directories( gpu_framework PUBLIC
 )
 
 find_package(oneMath REQUIRED)
-target_link_libraries(gpu_framework ONEMATH::onemath)
+target_link_libraries(gpu_framework ONEMATH::onemath MPI::MPI_CXX)
 
 ###### Add target and dependencies for unit tests ##############
 set( BUILD_TEST $ENV{BUILD_XDF_TESTS})

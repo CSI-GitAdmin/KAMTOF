@@ -73,7 +73,7 @@ dataSetStorage<T, TYPE, DIMS>& silo::register_entry(std::string name, const uint
 
       new_entry->is_unresolved = false;
       new_entry->set_offsets(DIMS, shape);
-      new_entry->resize_internal(new_entry->byte_size());
+      new_entry->resize_internal(new_entry->size());
 
       m_unresolved_data[static_cast<uint8_t>(TYPE)].erase(unresolved_it);
       m_data[static_cast<uint8_t>(TYPE)].insert({name, new_entry});

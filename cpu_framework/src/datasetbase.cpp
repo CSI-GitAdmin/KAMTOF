@@ -89,7 +89,7 @@ void dataSetBase::resize_internal(const uint64_t new_size)
       if(m_data)
       {
 #ifdef GPU_DEVELOP
-         copy_over_and_resize(new_byte_size);
+         copy_over_and_resize_page_aligned_memory(new_byte_size);
 #else
          assert(m_size != 0 && m_byte_size != 0);
          // Allocate new data and copy over data

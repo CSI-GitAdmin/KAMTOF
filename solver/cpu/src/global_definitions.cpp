@@ -3,6 +3,7 @@
 
 #include "silo.h"
 #include "cpu_globals.h"
+#include "mpiclass.h"
 
 #ifdef ENABLE_GPU
 #include "gpu_globals.h"

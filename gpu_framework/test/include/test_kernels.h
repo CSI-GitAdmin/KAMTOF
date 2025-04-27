@@ -5,7 +5,7 @@
 #include "gpu_enums.h" // For GDF namespace
 #include "gpu_api_functions.h"
 
-constexpr strict_fp_t tol = 1.0e-10;
+constexpr strict_fp_t test_tol = 1.0e-10;
 
 class kg_scale_pressure_and_change_scale
 {

@@ -12,92 +12,7 @@ namespace GDF
 {
 
 // Custom device selector for sycl::queue
-inline sycl::device custom_device_selector(const sycl_device_t& m_device_type, const std::string& m_device_name, const bool allow_hypergpu = false)
-{
-   // Get the list of platforms and devices with the requested device and name
-   std::vector<sycl::platform> platform_list(sycl::platform::get_platforms());
-   std::vector<std::vector<sycl::device>> device_list(platform_list.size());
-   std::vector<uint8_t> num_gpus(platform_list.size(), 0);
-   for (uint8_t pltfrm_idx = 0; pltfrm_idx < platform_list.size(); pltfrm_idx++)
-   {
-      const sycl::platform& cur_platform = platform_list[pltfrm_idx];
-      device_list[pltfrm_idx].reserve(cur_platform.get_devices().size());
-      for (const sycl::device& cur_device : cur_platform.get_devices())
-      {
-         if (m_device_type == sycl_device_t::DEFAULT && m_device_name == "")
-         {
-            device_list[pltfrm_idx].emplace_back(cur_device);
-            if(cur_device.is_gpu())
-               num_gpus[pltfrm_idx]++;
-         }
-         else
-         {
-            if( (m_device_type == sycl_device_t::DEFAULT)             ||
-                (m_device_type == sycl_device_t::CPU && cur_device.is_cpu()) ||
-                (m_device_type == sycl_device_t::GPU && cur_device.is_gpu()) ||
-                (m_device_type == sycl_device_t::ACCELERATOR && cur_device.is_accelerator()))
-            {
-               std::string cur_device_name(cur_device.get_info<sycl::info::device::name>());
-               std::string m_device(m_device_name);
-               std::transform(cur_device_name.begin(), cur_device_name.end(), cur_device_name.begin(), ::toupper);
-               std::transform(m_device.begin(), m_device.end(), m_device.begin(), ::toupper);
-               if(cur_device_name.find(m_device) != std::string::npos)
-               {
-                  device_list[pltfrm_idx].emplace_back(cur_device);
-               }
-            }
-         }
-      }
-   }
-
-   if (m_device_type == sycl_device_t::DEFAULT && m_device_name == "")
-   {
-      uint8_t platform_to_select = std::distance(num_gpus.begin(), std::max_element(num_gpus.begin(), num_gpus.end()));
-      uint8_t num_devices = device_list[platform_to_select].size();
-      if(allow_hypergpu)
-      {
-         return device_list[platform_to_select][local_rank % num_devices];
-      }
-      else
-      {
-         if(num_devices >= local_numprocs)
-            return device_list[platform_to_select][local_rank];
-      }
-   }
-   else
-   {
-      // By now we should have the list the devices in every platform which is okay to be selected
-      for (uint8_t pltfrm_idx = 0; pltfrm_idx < platform_list.size(); pltfrm_idx++)
-      {
-         const uint8_t num_devices = device_list[pltfrm_idx].size();
-         if(allow_hypergpu)
-         {
-            if(num_devices == 0)
-               continue;
-            return device_list[pltfrm_idx][local_rank % num_devices];
-         }
-         else
-         {
-            if(num_devices < local_numprocs)
-               continue;
-            return device_list[pltfrm_idx][local_rank];
-         }
-      }
-   }
-
-   if(allow_hypergpu)
-   {
-      std::string err_msg = "No device of requested type is available!";
-      log_msg<CDF::LogLevel::ERROR>(err_msg);
-   }
-   else
-   {
-      std::string err_msg = " Number of device of requested type is lesser than the number of cores launched on this node!";
-      log_msg<CDF::LogLevel::ERROR>(err_msg);
-   }
-
-   return sycl::device();
-}
+sycl::device custom_device_selector(const sycl_device_t& m_device_type, const std::string& m_device_name, const bool allow_hypergpu = false);
 
 class GPUManager_t
 {
@@ -193,7 +108,7 @@ private:
    template <class T, CDF::StorageType TYPE, uint8_t DIMS /* = ZEROD */>
    dataSetStorageGPURead<T, TYPE, DIMS>& extract_gpu_data_for_extractor(dataSetStorageRead<T, TYPE, DIMS>& dss_obj);
 
-   template<typename T, typename... Us>
+   template<typename T, bool async = false, typename... Us>
    void submit_to_gpu_internal(Us&&... args);
 
    template<typename T, typename... Us>
@@ -326,6 +241,7 @@ public:
 
    // The friends functions are the APIs by which the devs interacts with the (private) member functions of gpu_manager_t class
 
+   friend inline void set_gpu_global_local_range(const uint64_t glob_range, const uint64_t locl_range);
    friend inline void set_gpu_global_local_range(const uint64_t (&glob_range)[1], const uint64_t (&locl_range)[1]);
    friend inline void set_gpu_global_local_range(const uint64_t (&glob_range)[2], const uint64_t (&locl_range)[2]);
    friend inline void set_gpu_global_local_range(const uint64_t (&glob_range)[3], const uint64_t (&locl_range)[3]);
@@ -358,7 +274,7 @@ public:
    friend void submit_to_gpu(Us&&... args);
 
    template<typename T, typename... Us>
-   friend void submit_to_gpu_extractor(Us&&... args);
+   friend void submit_to_gpu_async(Us&&... args);
 
    template<typename T, typename... Us>
    friend void submit_to_gpu_single_workgroup(Us&&... args);

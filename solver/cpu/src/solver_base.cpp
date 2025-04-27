@@ -1,48 +1,54 @@
- #include <vector>
+#include <vector>
+#include <cstring>
 #include <cmath>
 #include <cstdio>
+#include <set>
 
+#include "grid.h"
 #include "solver.h"
+#include "mpiclass.h"
+#include <mpi.h>
 #include "silo.h"
 #include "silo_fwd.h"
 #include "fp_data_types.h"
 
-Solver_base::Solver_base():
-   ia(m_silo.register_entry<int, CDF::StorageType::VECTOR>("ia")),
-   ja(m_silo.register_entry<int, CDF::StorageType::VECTOR>("ja")),
-   csr_idx(m_silo.register_entry<int, CDF::StorageType::FACE>("csr_idx")),
-   csr_diag_idx(m_silo.register_entry<int, CDF::StorageType::CELL>("csr_diag_idx")),
-   A_data(m_silo.register_entry<strict_fp_t, CDF::StorageType::VECTOR>("A_data")),
-   area(m_silo.register_entry<strict_fp_t, CDF::StorageType::FACE>("area")),
-   normal(m_silo.register_entry<strict_fp_t, CDF::StorageType::VECTOR>("normal")),
-   xcen(m_silo.register_entry<strict_fp_t, CDF::StorageType::VECTOR>("xcen")),
-   boundary_normal(m_silo.register_entry<strict_fp_t, CDF::StorageType::VECTOR>("boundary_normal")),
-   boundary_xcen(m_silo.register_entry<strict_fp_t, CDF::StorageType::VECTOR>("boundary_xcen")),
-   number_of_neighbors(m_silo.register_entry<int, CDF::StorageType::VECTOR>("number_of_neighbors")),
-   cell_neighbors(m_silo.register_entry<int, CDF::StorageType::FACE>("cell_neighbors")),
-   boundary_type_start_and_end_index(m_silo.register_entry<int, CDF::StorageType::VECTOR>("boundary_type_start_and_end_index")),
-   volume(m_silo.register_entry<strict_fp_t, CDF::StorageType::CELL>("volume")),
-   boundary_face_to_cell(m_silo.register_entry<int, CDF::StorageType::BOUNDARY>("boundary_face_to_cell")),
-   boundary_area(m_silo.register_entry<strict_fp_t, CDF::StorageType::BOUNDARY>("boundary_area")),
-   rhs(m_silo.register_entry<strict_fp_t, CDF::StorageType::CELL>("rhs")),
-   dQ(m_silo.register_entry<strict_fp_t, CDF::StorageType::CELL>("dQ")),
-   dQ_old(m_silo.register_entry<strict_fp_t, CDF::StorageType::CELL>("dQ_old")),
-   Q_cell(m_silo.register_entry<strict_fp_t, CDF::StorageType::CELL>("Q_cell")),
-   Q_boundary(m_silo.register_entry<strict_fp_t, CDF::StorageType::BOUNDARY>("Q_boundary")),
-   residual(m_silo.register_entry<strict_fp_t, CDF::StorageType::CELL>("residual"))
+Solver_base::Solver_base()
 {
    residual_norm = 1e30;
+}
+
+void Solver_base::allocate_variables()
+{
+   m_silo.register_entry<int, CDF::StorageType::VECTOR>("ia_local");
+   m_silo.register_entry<int, CDF::StorageType::VECTOR>("ja_local");
+   m_silo.register_entry<strict_fp_t, CDF::StorageType::VECTOR>("A_data_local");
+
+   m_silo.register_entry<strict_fp_t, CDF::StorageType::CELL>("rhs_local");
+   m_silo.register_entry<strict_fp_t, CDF::StorageType::CELL>("dQ_local");
+   m_silo.register_entry<strict_fp_t, CDF::StorageType::CELL>("dQ_old_local");
+   m_silo.register_entry<strict_fp_t, CDF::StorageType::CELL>("Q_cell_local");
+   m_silo.register_entry<strict_fp_t, CDF::StorageType::CELL>("residual_local");
+   m_silo.register_entry<int, CDF::StorageType::CELL>("csr_diag_idx_local");
+
+   m_silo.register_entry<strict_fp_t, CDF::StorageType::FACE>("rdista_local");
+   m_silo.register_entry<int, CDF::StorageType::FACE>("csr_idx_local");
+
+   m_silo.register_entry<strict_fp_t, CDF::StorageType::BOUNDARY>("boundary_rdista_local");
+   m_silo.register_entry<strict_fp_t, CDF::StorageType::BOUNDARY>("Q_boundary_local");
 }
 
 void Solver_base::set_boundary_conditions (const strict_fp_t QL, const strict_fp_t QR,
                                           const strict_fp_t QB, const strict_fp_t QT)
 {
+   VectorRead<int> boundary_type_start_and_end_index = m_silo.retrieve_entry<int, CDF::StorageType::VECTOR>("boundary_type_start_and_end_index");
+   Boundary<strict_fp_t> Q_boundary_local = m_silo.retrieve_entry<strict_fp_t, CDF::StorageType::BOUNDARY>("Q_boundary_local");
+   
    {  // Left boundary
       const int boundary = 2;
       for (unsigned int i = boundary_type_start_and_end_index[boundary];
            i < boundary_type_start_and_end_index[boundary+1]; i++)
       {
-         Q_boundary[i] = QL;
+         Q_boundary_local[i] = QL;
       }
    }
    {  // Right boundary
@@ -50,7 +56,7 @@ void Solver_base::set_boundary_conditions (const strict_fp_t QL, const strict_fp
       for (unsigned int i = boundary_type_start_and_end_index[boundary];
            i < boundary_type_start_and_end_index[boundary+1]; i++)
       {
-         Q_boundary[i] = QR;
+         Q_boundary_local[i] = QR;
       }
    }
    {  // Bottom boundary
@@ -58,7 +64,7 @@ void Solver_base::set_boundary_conditions (const strict_fp_t QL, const strict_fp
       for (unsigned int i = boundary_type_start_and_end_index[boundary];
            i < boundary_type_start_and_end_index[boundary+1]; i++)
       {
-         Q_boundary[i] = QB;
+         Q_boundary_local[i] = QB;
       }
    }
    {  // Top boundary
@@ -66,155 +72,221 @@ void Solver_base::set_boundary_conditions (const strict_fp_t QL, const strict_fp
       for (unsigned int i = boundary_type_start_and_end_index[boundary];
            i < boundary_type_start_and_end_index[boundary+1]; i++)
       {
-         Q_boundary[i] = QT;
+         Q_boundary_local[i] = QT;
       }
    }
 }
 
-void Solver_base::initialize_solution (const strict_fp_t Q_initial)
+void Solver_base::initialize_solution(const int num_solved, const strict_fp_t Q_initial)
 {
-   for (unsigned int i = 0; i < this->num_cells; i++)
+   Cell<strict_fp_t> Q_cell_local = m_silo.retrieve_entry<strict_fp_t, CDF::StorageType::CELL>("Q_cell_local");
+
+   for (unsigned int il = 0; il < num_solved; il++)
    {
-      Q_cell[i] = Q_initial;
+      Q_cell_local[il] = Q_initial;
    }
+   mpi_nbr_communication(Q_cell_local.cpu_data());   
 }
 
-void Solver_base::print_residual ()
+void Solver_base::update_solution(const int num_solved)
 {
-   for (unsigned int i = 0; i < this->num_cells; i++)
+   Cell<strict_fp_t> Q_cell_local = m_silo.retrieve_entry<strict_fp_t, CDF::StorageType::CELL>("Q_cell_local");
+   
+   if(implicit_solver == false)
    {
-      printf("Cell %d, residual %e\n", i, residual[i]);
-   }
-}
+      CellRead<strict_fp_t> volume_local = m_silo.retrieve_entry<strict_fp_t, CDF::StorageType::CELL>("volume_local");
+      CellRead<strict_fp_t> residual_local = m_silo.retrieve_entry<strict_fp_t, CDF::StorageType::CELL>("residual_local");
 
-void Solver_base::print_solution ()
-{
-   for (unsigned int i = 0; i < this->num_cells; i++)
-   {
-      printf("Cell %d, solution %e\n", i, Q_cell[i]);
-   }
-}
-
-void Solver_base::update_solution (const int solver_type, const int num_iter)
-{
-   if (m_implicit == false)
-   {
-      for (unsigned int i = 0; i < this->num_cells; i++)
+      for (unsigned int i = 0; i < num_solved; i++)
       {
-         Q_cell[i] -= residual[i] * delta_t / volume[i];
+         Q_cell_local[i] -= residual_local[i] * delta_t / volume_local[i];
       }
    }
    else
    {
       if(solver_type == 0)
       {
-         jacobi_linear_solver(num_iter);
+         jacobi_linear_solver(num_solved);
       }
       else
       {
-         bicgstab_linear_solver(num_iter);
+         bicgstab_linear_solver();
       }
+
+      CellRead<strict_fp_t> dQ_local = m_silo.retrieve_entry<strict_fp_t, CDF::StorageType::CELL>("dQ_local");
       
-      for (unsigned int i = 0; i < this->num_cells; i++)
+      for (unsigned int i = 0; i < num_solved; i++)
       {
-         Q_cell[i] += dQ[i];
+         Q_cell_local[i] += dQ_local[i];
       }
    }
+
+   mpi_nbr_communication(Q_cell_local.cpu_data());
 }
 
-void Solver_base::write_solution(std::string file_name)
+void Solver_base::write_solution(const int num_solved, const int num_cells, std::string file_name)
 {
-   FILE* file = fopen(file_name.c_str(), "w");
+   int* recv_count = nullptr;
+   int* recv_disp = nullptr;
+   strict_fp_t* xcen_total = nullptr;
+   strict_fp_t* Q_cell_total = nullptr;
 
-   for(int i = 0; i < this->num_cells; i++)
+   if(rank == 0)
    {
-      fprintf(file, "%0.16f, %.16f, %.16f\n", this->xcen[2*i], this->xcen[2*i+1], this->Q_cell[i]);
+      recv_disp = new int[numprocs];
+      recv_count = new int[numprocs];
+      xcen_total = new strict_fp_t[2 * num_cells];
+      Q_cell_total = new strict_fp_t[num_cells];
    }
 
-   fclose(file);
+   MPI_Gather(&num_solved, 1, MPI_INT, recv_count, 1, MPI_INT, 0, MPI_COMM_WORLD);
+
+   if(rank == 0)
+   {
+      recv_disp[0] = 0;
+      for(int i = 1; i < numprocs; i++)
+      {
+         recv_disp[i] = recv_disp[i-1] + recv_count[i-1];
+      }
+   }
+   
+   CellRead<strict_fp_t> Q_cell_local = m_silo.retrieve_entry<strict_fp_t, CDF::StorageType::CELL>("Q_cell_local");
+   
+   MPI_Gatherv(Q_cell_local.cpu_data(), num_solved, MPI_DOUBLE, Q_cell_total, recv_count, recv_disp, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+
+   if(rank == 0)
+   {
+      for(int i = 0; i < numprocs; i++)
+      {
+         recv_count[i] *= 2;
+         recv_disp[i] *= 2;
+      }
+   }
+
+   VectorRead<strict_fp_t> xcen_local = m_silo.retrieve_entry<strict_fp_t, CDF::StorageType::VECTOR>("xcen_local");
+   
+   MPI_Gatherv(xcen_local.cpu_data(), 2*num_solved, MPI_DOUBLE, xcen_total, recv_count, recv_disp, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+
+   if(rank == 0)
+   {
+      FILE* file = fopen(file_name.c_str(), "w");
+
+      for(int i = 0; i < num_cells; i++)
+      {
+         fprintf(file, "%0.16f, %.16f, %.16f\n", xcen_total[2*i], xcen_total[2*i+1], Q_cell_total[i]);
+      }
+
+      fclose(file);
+
+      delete[] xcen_total;
+      delete[] Q_cell_total;
+   }
 }
 
 void Solver_base::write_residual(std::string file_name, std::vector<strict_fp_t>& residual_norm)
 {
-   FILE* file = fopen(file_name.c_str(), "w");
-
-   for(int i = 0; i < residual_norm.size(); i++)
+   if(rank == 0)
    {
-      fprintf(file, "%0.16f\n", residual_norm[i]);
-   }
+      FILE* file = fopen(file_name.c_str(), "w");
 
-   fclose(file);
+      for(int i = 0; i < residual_norm.size(); i++)
+      {
+         fprintf(file, "%0.16f\n", residual_norm[i]);
+      }
+
+      fclose(file);
+   }
 }
 
-void Solver_base::jacobi_linear_solver(const int num_iter)
+void Solver_base::jacobi_linear_solver(const int num_solved)
 {
-   for (unsigned int i = 0; i < this->num_cells; i++)
+   CellRead<strict_fp_t> rhs_local = m_silo.retrieve_entry<strict_fp_t, CDF::StorageType::CELL>("rhs_local");
+   VectorRead<int> ia_local = m_silo.retrieve_entry<int, CDF::StorageType::VECTOR>("ia_local");
+   VectorRead<int> ja_local = m_silo.retrieve_entry<int, CDF::StorageType::VECTOR>("ja_local");
+   VectorRead<strict_fp_t> A_data_local = m_silo.retrieve_entry<strict_fp_t, CDF::StorageType::VECTOR>("A_data_local");
+   Cell<strict_fp_t> dQ_old_local = m_silo.retrieve_entry<strict_fp_t, CDF::StorageType::CELL>("dQ_old_local");
+   Cell<strict_fp_t> dQ_local = m_silo.retrieve_entry<strict_fp_t, CDF::StorageType::CELL>("dQ_local");
+
+   for (unsigned int i = 0; i < num_solved; i++)
    {
-      dQ_old[i] = 0.0;
+      dQ_old_local[i] = 0.0;
    }
 
    for (unsigned int iter = 0; iter < num_iter; iter++)
    {
-      for (unsigned int i = 0; i < this->num_cells; i++)
+      mpi_nbr_communication(dQ_old_local.cpu_data());
+
+      for (unsigned int i = 0; i < num_solved; i++)
       {
-         strict_fp_t temp = rhs[i];
+         strict_fp_t temp = rhs_local[i];
          // First entry is the diagonal.
-         const strict_fp_t diag_value = A_data[ia[i]];
+         const strict_fp_t diag_value = A_data_local[ia_local[i]];
          // Transfer all the off diagonals to right hand side
-         for (int j = ia[i] + 1; j < ia[i + 1]; j++)     // Skipping first one as it is the diagonal
+         for (int j = ia_local[i] + 1; j < ia_local[i + 1]; j++)     // Skipping first one as it is the diagonal
          {
-            temp -=  A_data[j] * dQ_old[ja[j]];
+            temp -=  A_data_local[j] * dQ_old_local[ja_local[j]];
          }
 
-         dQ[i] = temp / diag_value;
+         dQ_local[i] = temp / diag_value;
       }
 
-      for (unsigned int i = 0; i < this->num_cells; i++)
+      for (unsigned int i = 0; i < num_solved; i++)
       {
-         dQ_old[i] = dQ[i];
+         dQ_old_local[i] = dQ_local[i];
       }
    }
 }
 
-void Solver_base::matrix_vector_multiply(const strict_fp_t* const vec_in, strict_fp_t* const vec_out)
+void Solver_base::matrix_vector_multiply(const int num_solved, VectorRead<int>& ia_local, VectorRead<int>& ja_local, VectorRead<strict_fp_t>& A_data_local, strict_fp_t* vec_in, strict_fp_t* const vec_out)
 {
-   memset(vec_out, 0, this->num_cells * sizeof(strict_fp_t));
+   memset(vec_out, 0, num_solved * sizeof(strict_fp_t));
 
-   for(int i = 0; i < this->num_cells; i++)
+   mpi_nbnb_transfer(vec_in);
+   for(int i = 0; i < num_solved; i++)
    {
-      for(int j = this->ia[i]; j < this->ia[i+1]; j++)
+      for(int j = ia_local[i]; j < ia_local[i+1]; j++)
       {
-         vec_out[i] += this->A_data[j] * vec_in[this->ja[j]];
+         vec_out[i] += A_data_local[j] * vec_in[ja_local[j]];
       }
    }
 }
 
-strict_fp_t Solver_base::dot_product(const strict_fp_t* const x1, const strict_fp_t* const x2)
+strict_fp_t Solver_base::dot_product(const size_t num_elements, const strict_fp_t* const x1, const strict_fp_t* const x2)
 {
    strict_fp_t result = 0.0;
+   strict_fp_t result_global = 0.0;
 
-   for(int i = 0; i < this->num_cells; i++)
+
+   for(int i = 0; i < num_elements; i++)
    {
       result += x1[i] * x2[i];
    }
 
-   return result;
+   MPI_Allreduce(&result, &result_global, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+
+   return result_global;
 }
 
-void Solver_base::bicgstab_linear_solver(const int num_iter)
+void Solver_base::bicgstab_linear_solver()
 {
-   memset(dQ.cpu_data(), 0, this->num_cells * sizeof(strict_fp_t));
+   VectorRead<int> ia_local = m_silo.retrieve_entry<int, CDF::StorageType::VECTOR>("ia_local");
+   VectorRead<int> ja_local = m_silo.retrieve_entry<int, CDF::StorageType::VECTOR>("ja_local");
+   VectorRead<strict_fp_t> A_data_local = m_silo.retrieve_entry<strict_fp_t, CDF::StorageType::VECTOR>("A_data_local");
+   CellRead<strict_fp_t> rhs_local = m_silo.retrieve_entry<strict_fp_t, CDF::StorageType::CELL>("rhs_local");
+   Cell<strict_fp_t> dQ_local = m_silo.retrieve_entry<strict_fp_t, CDF::StorageType::CELL>("dQ_local");
+
+   memset(dQ_local.cpu_data(), 0, nrow_local * sizeof(strict_fp_t));
 
    //Memory Allocations
-   strict_fp_t* r0 = new strict_fp_t [this->num_cells];
-   strict_fp_t* r  = new strict_fp_t [this->num_cells];
-   strict_fp_t* p  = new strict_fp_t [this->num_cells];
-   strict_fp_t* Ap = new strict_fp_t [this->num_cells];
-   strict_fp_t* s  = new strict_fp_t [this->num_cells];
-   strict_fp_t* As = new strict_fp_t [this->num_cells];
+   strict_fp_t* r0 = new strict_fp_t [ncol_local];
+   strict_fp_t* r  = new strict_fp_t [ncol_local];
+   strict_fp_t* p  = new strict_fp_t [ncol_local];
+   strict_fp_t* Ap = new strict_fp_t [ncol_local];
+   strict_fp_t* s  = new strict_fp_t [ncol_local];
+   strict_fp_t* As = new strict_fp_t [ncol_local];
 
-   strict_fp_t* p1 = new strict_fp_t [this->num_cells];
-   strict_fp_t* s1 = new strict_fp_t [this->num_cells];
+   strict_fp_t* p1 = new strict_fp_t [ncol_local];
+   strict_fp_t* s1 = new strict_fp_t [ncol_local];
 
    //Constants
    strict_fp_t alpha  = 0;
@@ -222,52 +294,50 @@ void Solver_base::bicgstab_linear_solver(const int num_iter)
    strict_fp_t omega1  = 0;
    strict_fp_t beta   = 0;
 
-
-   strict_fp_t* const Ax = new strict_fp_t[this->num_cells];
-   matrix_vector_multiply(dQ.cpu_data(), Ax);
-   for(int i = 0; i < this->num_cells; i++)
+   strict_fp_t* const Ax = new strict_fp_t[nrow_local];
+   matrix_vector_multiply(nrow_local, ia_local, ja_local, A_data_local, dQ_local.cpu_data(), Ax);
+   for(int i = 0; i < nrow_local; i++)
    {
-      r0[i] = this->rhs[i]-Ax[i];
+      r0[i] = rhs_local[i]-Ax[i];
    }
    delete[] Ax;
 
-   memcpy(r, r0, this->num_cells * sizeof(strict_fp_t));
-   memcpy(p, r0, this->num_cells * sizeof(strict_fp_t));
+   memcpy(r, r0, nrow_local * sizeof(strict_fp_t));
+   memcpy(p, r0, nrow_local * sizeof(strict_fp_t));
 
    for(int iter = 0; iter < num_iter; iter++)
    {
-      memcpy(p1, p, this->num_cells * sizeof(strict_fp_t)); // no preconditioner
+      memcpy(p1, p, nrow_local * sizeof(strict_fp_t)); // no preconditioner
 
-      alpha1 = dot_product(r, r0);
+      alpha1 = dot_product(nrow_local, r, r0);
 
-      matrix_vector_multiply(p1, Ap);
+      matrix_vector_multiply(nrow_local, ia_local, ja_local, A_data_local, p1, Ap);
 
-      alpha = dot_product(Ap, r0);
-
+      alpha = dot_product(nrow_local, Ap, r0);
       alpha = alpha1/alpha;
 
-      for(int i = 0; i < this->num_cells; i++)
+      for(int i = 0; i < nrow_local; i++)
       {
          s[i] = r[i] - alpha * Ap[i];
       }
 
-      memcpy(s1, s, this->num_cells * sizeof(strict_fp_t)); // no preconditoner
+      memcpy(s1, s, nrow_local * sizeof(strict_fp_t)); // no preconditoner
 
-      matrix_vector_multiply(s1, As);
+      matrix_vector_multiply(nrow_local, ia_local, ja_local, A_data_local, s1, As);
 
-      omega1 = dot_product(As, s);
-      omega1 /= dot_product(As, As);
+      omega1 = dot_product(nrow_local, As, s);
+      omega1 /= dot_product(nrow_local, As, As);
 
-      for(int i = 0; i < this->num_cells; i++)
+      for(int i = 0; i < nrow_local; i++)
       {
-         dQ[i] = dQ[i] + alpha*p1[i] + omega1*s1[i];
+         dQ_local[i] = dQ_local[i] + alpha*p1[i] + omega1*s1[i];
          r[i] = s[i] - omega1*As[i];
       }
 
-      beta = dot_product(r, r0)/alpha1;
+      beta = dot_product(nrow_local, r, r0)/alpha1;
       beta *= alpha/omega1;
 
-      for(int i = 0; i < this->num_cells; i++)
+      for(int i = 0; i < nrow_local; i++)
       {
          p[i] = r[i] + beta*(p[i] - omega1*Ap[i]);
       }
@@ -283,152 +353,76 @@ void Solver_base::bicgstab_linear_solver(const int num_iter)
    delete[] p1;
 }
 
-void Solver_base::allocate_memory(const bool implicit, const Grid & grid)
+void Solver_base::setup_matrix_struct(const int num_solved, const int num_involved)
 {
-   // This is the unique face version of the Solver class.
-   // Let's first allocate memory in the base class.
-   m_implicit = implicit;
-
-   this->num_cells = grid.get_number_of_cells();
-   this->num_faces = grid.get_number_of_faces();
-   this->num_boundary_faces = grid.get_number_of_boundary_faces();
-   this->num_boundary = grid.get_number_of_boundaries();
-
-   xcen.resize(2 * this->num_cells);
-
-   boundary_normal.resize(2 * this->num_boundary_faces);
-   boundary_xcen.resize(2 * this->num_boundary_faces);
-
-   boundary_type_start_and_end_index.resize(this->num_boundary + 1);
-
-   number_of_neighbors.resize(this->num_cells + 1);
-   normal.resize(2 * this->num_faces);
-}
-
-void Solver_base::copy_grid_data (const Grid & grid)
-{
-   // Solver_base::copy_grid_data(grid);
-   VectorRead<strict_fp_t>& c_xcen = grid.get_xcen();
-   CellRead<strict_fp_t>& c_volume = grid.get_volume();
-   BoundaryRead<int>& c_boundary_face_to_cell = grid.get_boundary_face_to_cell();
-   VectorRead<strict_fp_t>& c_boundary_xcen = grid.get_boundary_xcen();
-   VectorRead<strict_fp_t>& c_boundary_normal = grid.get_boundary_normal();
-   BoundaryRead<strict_fp_t>& c_boundary_area = grid.get_boundary_area();
-   VectorRead<int>& c_boundary_type_start_and_end_index = grid.get_boundary_type_start_and_end_index();
-
-   for (unsigned int i = 0; i < (2*this->num_cells); i++)
+   if(implicit_solver == true)
    {
-      xcen[i] = c_xcen[i];
-   }
+      Vector<int> ia_local = m_silo.retrieve_entry<int, CDF::StorageType::VECTOR>("ia_local");
+      Vector<int> ja_local = m_silo.retrieve_entry<int, CDF::StorageType::VECTOR>("ja_local");
+      Vector<strict_fp_t> A_data_local = m_silo.retrieve_entry<strict_fp_t, CDF::StorageType::VECTOR>("A_data_local");
+      Cell<int> csr_diag_idx_local = m_silo.retrieve_entry<int, CDF::StorageType::CELL>("csr_diag_idx_local");
+      Face<int> csr_idx_local = m_silo.retrieve_entry<int, CDF::StorageType::FACE>("csr_idx_local");
+      VectorRead<int> number_of_neighbors_local = m_silo.retrieve_entry<int, CDF::StorageType::VECTOR>("number_of_neighbors_local");
+      FaceRead<int> cell_neighbors_local = m_silo.retrieve_entry<int, CDF::StorageType::FACE>("cell_neighbors_local");
 
-   for (unsigned int i = 0; i < this->num_cells; i++)
-   {
-      volume[i] = c_volume[i];
-   }
+      nrow_local = num_solved;
+      ncol_local = num_involved;
 
-   for (unsigned int i = 0; i < this->num_boundary_faces; i++)
-   {
-      boundary_face_to_cell[i] = c_boundary_face_to_cell[i];
-      boundary_area[i] = c_boundary_area[i];
-      boundary_normal[2 * i] = c_boundary_normal[2 * i];
-      boundary_normal[(2 * i) + 1] = c_boundary_normal[(2 * i) + 1];
-      boundary_xcen[2 * i] = c_boundary_xcen[2 * i];
-      boundary_xcen[(2 * i) + 1] = c_boundary_xcen[(2 * i) + 1];
-   }
-
-   for (unsigned int i = 0; i < this->num_boundary; i++)
-   {
-      boundary_type_start_and_end_index[i] =
-         c_boundary_type_start_and_end_index[i];
-      boundary_type_start_and_end_index[i+1] =
-         c_boundary_type_start_and_end_index[i+1];
-   }
-
-
-
-   VectorRead<int>& c_number_of_neighbors = grid.get_number_of_neighbors();
-
-   for (unsigned int i = 0; i < (this->num_cells+1); i++)
-      number_of_neighbors[i] = c_number_of_neighbors[i];
-
-   FaceRead<int>& c_cell_neighbors = grid.get_cell_neighbors();
-
-   for (unsigned int i = 0; i < this->num_faces; i++)
-      cell_neighbors[i] = c_cell_neighbors[i];
-
-   FaceRead<strict_fp_t>& c_area = grid.get_area();
-   VectorRead<strict_fp_t>& c_normal = grid.get_normal();
-
-   for (unsigned int i = 0; i < this->num_faces; i++)
-   {
-      area[i] = c_area[i];
-
-      normal[2 * i] = c_normal[2 * i];
-      normal[(2 * i) + 1] = c_normal[(2 * i) + 1];
-   }
-
-   if (m_implicit == true)
-   {
-      const int nrow = grid.get_number_of_cells();
-
-      ia.resize(nrow + 1);
-
-      // Count the neighbors or non-zeros for each cell or row (number_of_neighbors already has this information)
-      for (unsigned int i = 0; i < nrow; i++)
+      ia_local.resize(num_solved + 1);
+      for (unsigned int i = 0; i < num_solved; i++)
       {
-         ia[i + 1] = number_of_neighbors[i + 1] - number_of_neighbors[i] + 1; // +1 for diagonal
+         ia_local[i + 1] = number_of_neighbors_local[i + 1] - number_of_neighbors_local[i] + 1;
       }
-      // ia array contains number of non-zeros for each. Those need to be summed-up to get the ia array values.
-      for (unsigned int i = 1; i < nrow + 1; i++)
+      for (unsigned int i = 1; i < num_solved + 1; i++)
       {
-         ia[i] = ia[i] + ia[i - 1];
+         ia_local[i] = ia_local[i] + ia_local[i - 1];
       }
 
-      this->nnz = ia[nrow];
+      this->nnz_local = ia_local[num_solved];
 
-      ja.resize(this->nnz);
-      A_data.resize(this->nnz);
+      ja_local.resize(this->nnz_local);
+      A_data_local.resize(this->nnz_local);
 
-      std::vector<int> temp(nrow, 0);
+      std::vector<int> temp(num_solved, 0);
 
       // Fill the ja array. First is the diagonal entry
-      for (unsigned int i = 0; i < nrow; i++)
+      for (unsigned int i = 0; i < num_solved; i++)
       {
-         const int left_index = ia[i] + temp[i];
+         const int left_index = ia_local[i] + temp[i];
          temp[i]++;
-         ja[left_index] = i;
+         ja_local[left_index] = i;
       }
 
-      for (unsigned int i = 0; i < nrow; i++)
+      for (unsigned int i = 0; i < num_solved; i++)
       {
-         for (int j = number_of_neighbors[i]; j < number_of_neighbors[i + 1]; j++)
+         for (int j = number_of_neighbors_local[i]; j < number_of_neighbors_local[i + 1]; j++)
          {
             const int left = i;
-            const int right = cell_neighbors[j];
+            const int right = cell_neighbors_local[j];
 
-            const int left_index = ia[left] + temp[left];
+            const int left_index = ia_local[left] + temp[left];
             temp[left]++;
-            ja[left_index] = right;
+            ja_local[left_index] = right;
 
-            if (left_index >= ia[left + 1])
+            if (left_index >= ia_local[left + 1])
             {
                printf("Problem in filling the ja array for the matrix.\n");
-               printf("Cell %d: left_index %d ia %d ia %d\n", left, left_index, ia[left], ia[left + 1]);
+               printf("Cell %d: left_index %d ia %d ia %d\n", left, left_index, ia_local[left], ia_local[left + 1]);
             }
          }
       }
 
-      for(unsigned int kk = 0; kk < this->num_cells; kk++)
+      for(unsigned int i = 0; i < num_solved; i++)
       {
-         csr_diag_idx[kk] = ia[kk];
-         for (int nbr_count = number_of_neighbors[kk]; nbr_count < number_of_neighbors[kk + 1]; nbr_count++)
+         csr_diag_idx_local[i] = ia_local[i];
+         for (int j = number_of_neighbors_local[i]; j < number_of_neighbors_local[i + 1]; j++)
          {
-            const int nbr_kk = cell_neighbors[nbr_count];
-            for(unsigned int i = ia[kk]+1; i < ia[kk + 1]; i++)
+            const int nbr_local = cell_neighbors_local[j];
+            for(unsigned int nn = ia_local[i]+1; nn < ia_local[i + 1]; nn++)
             {
-               if(ja[i] == nbr_kk)
+               if(ja_local[nn] == nbr_local)
                {
-                  csr_idx[nbr_count] = i;
+                  csr_idx_local[j] = nn;
                }
             }
          }
@@ -436,131 +430,249 @@ void Solver_base::copy_grid_data (const Grid & grid)
    }
 }
 
-void Solver_base::compute_time_step ()
+void Solver_base::compute_time_step(const int num_solved, const int num_attached)
 {
-   std::vector<strict_fp_t> data (this->num_cells, 0.0);
+   std::vector<strict_fp_t> data(num_solved, 0.0);
 
-   for (unsigned int i = 0; i < this->num_cells; i++)
+   VectorRead<int> number_of_neighbors_local = m_silo.retrieve_entry<int, CDF::StorageType::VECTOR>("number_of_neighbors_local");
+   FaceRead<strict_fp_t> area_local = m_silo.retrieve_entry<strict_fp_t, CDF::StorageType::FACE>("area_local");
+   
+   for (unsigned int il = 0; il < num_solved; il++)
    {
-      for (int j = number_of_neighbors[i]; j < number_of_neighbors[i + 1]; j++)
+      for (int jl = number_of_neighbors_local[il]; jl < number_of_neighbors_local[il + 1]; jl++)
       {
-         const int left = i;
-         //         const int right = cell_neighbors[j];
-         data[left] += area[j];
+         const int left = il;
+         data[left] += area_local[jl];
       }
    }
 
-   for (unsigned int i = 0; i < this->num_boundary_faces; i++)
+   BoundaryRead<int> boundary_face_to_cell_local = m_silo.retrieve_entry<int, CDF::StorageType::BOUNDARY>("boundary_face_to_cell_local");
+   BoundaryRead<strict_fp_t> boundary_area_local = m_silo.retrieve_entry<strict_fp_t, CDF::StorageType::BOUNDARY>("boundary_area_local");
+   
+   for (unsigned int i = 0; i < num_attached; i++)
    {
-      const int cell = boundary_face_to_cell[i];
-
-      data[cell] += boundary_area[i];
+      const int cell = boundary_face_to_cell_local[i];
+      data[cell] += boundary_area_local[i];
    }
 
    strict_fp_t min_value = 1.e30;
 
-   for (unsigned int i = 0; i < this->num_cells; i++)
+   CellRead<strict_fp_t> volume_local = m_silo.retrieve_entry<strict_fp_t, CDF::StorageType::CELL>("volume_local");
+   
+   for (unsigned int il = 0; il < num_solved; il++)
    {
-      data[i] = data[i] / (volume[i] * 2);
+      data[il] = data[il] / (volume_local[il] * 2);
 
-      if (data[i] < min_value)
-         min_value = data[i];
+      if (data[il] < min_value)
+         min_value = data[il];
    }
-
+   MPI_Allreduce(&min_value, &min_value, 1, MPI_DOUBLE, MPI_MIN, MPI_COMM_WORLD);
+   
    // This is the limit. (dt / dx2) + (dt / dy2) < 0.5
    delta_t = 1.0 / (min_value * min_value * 2.0);     // 2.0 added to reduce from limit.
 
-   if (m_implicit == true)
+   if(implicit_solver == true)
       delta_t = delta_t * 10.0;
 
-   printf("CPU: Value of dt %e\n", delta_t);
+   if(rank == 0)
+      printf("CPU: Value of dt %e\n", delta_t);
 }
 
-void Solver_base::compute_system ()
+void Solver_base::compute_system(const int num_solved, const int num_attached)
 {
-   if (m_implicit == true)
+   if(implicit_solver == true)
    {
-      for (unsigned int i = 0; i < this->nnz; i++)
+      Vector<strict_fp_t> A_data_local = m_silo.retrieve_entry<strict_fp_t, CDF::StorageType::VECTOR>("A_data_local");
+      
+      for (unsigned int i = 0; i < nnz_local; i++)
       {
-         A_data[i] = 0.0;
-      }
-      for (unsigned int i = 0; i < this->num_cells; i++)
-      {
-         residual[i] = 0.0;
+         A_data_local[i] = 0.0;
       }
 
       // Time term
-      for (unsigned int i = 0; i < this->num_cells; i++)
+      CellRead<strict_fp_t> volume_local = m_silo.retrieve_entry<strict_fp_t, CDF::StorageType::CELL>("volume_local");
+      CellRead<int> csr_diag_idx_local = m_silo.retrieve_entry<int, CDF::StorageType::CELL>("csr_diag_idx_local");
+      
+      for (unsigned int i = 0; i < num_solved; i++)
       {
-         const int crs_index = csr_diag_idx[i];
-         A_data[crs_index] += volume[i] / delta_t;
+         const int crs_index = csr_diag_idx_local[i];
+         A_data_local[crs_index] += volume_local[i] / delta_t;
       }
 
-      //Diffusion term for internal cells
-      for (unsigned int i = 0; i < this->num_cells; i++)
+      // Diffusion term for internal cells
+      VectorRead<int> number_of_neighbors_local = m_silo.retrieve_entry<int, CDF::StorageType::VECTOR>("number_of_neighbors_local");
+      FaceRead<int> csr_idx_local = m_silo.retrieve_entry<int, CDF::StorageType::FACE>("csr_idx_local");
+      FaceRead<strict_fp_t> rdista_local = m_silo.retrieve_entry<strict_fp_t, CDF::StorageType::FACE>("rdista_local");
+      
+      for (unsigned int il = 0; il < num_solved; il++)
       {
-         for (int j = number_of_neighbors[i]; j < number_of_neighbors[i + 1]; j++)
+         for (int jl = number_of_neighbors_local[il]; jl < number_of_neighbors_local[il + 1]; jl++)
          {
-            const int left = i;
-            const int right = cell_neighbors[j];
+            const int left = il;
 
-            strict_fp_t distance;
-            if (std::abs(normal[2 * j]) > 0.1)      // x face
-            {
-               distance = std::abs(xcen[2 * right] - xcen[2 * left]);
-            }
-            else
-            {
-               distance = std::abs(xcen[(2 * right) + 1] - xcen[(2 * left) + 1]);
-            }
-            const strict_fp_t grad_Q = (Q_cell[right] - Q_cell[left]) / distance;
-
-            strict_fp_t face_value = grad_Q * area[j];
-
-            residual[left] -= face_value;
-
-            const strict_fp_t temp = 1.0 / distance * area[j];
+            const strict_fp_t temp = rdista_local[jl];
 
             // Left cell
-            int crs_index = csr_diag_idx[left];
-            A_data[crs_index] += temp;
-
-            crs_index = csr_idx[j];
-            A_data[crs_index] -= temp;
+            int crs_index = csr_diag_idx_local[left];
+            A_data_local[crs_index] += temp;
+   
+            crs_index = csr_idx_local[jl];
+            A_data_local[crs_index] -= temp;
          }
       }
 
-      //Diffusion term for boundary cells
-      for (unsigned int i = 0; i < this->num_boundary_faces; i++)
+      // Diffusion term for boundary cells
+      VectorRead<int> ranks_list = m_silo.retrieve_entry<int, CDF::StorageType::VECTOR>("ranks_list");
+      VectorRead<int> global_local = m_silo.retrieve_entry<int, CDF::StorageType::VECTOR>("global_local");
+      BoundaryRead<int> boundary_face_to_cell_local = m_silo.retrieve_entry<int, CDF::StorageType::BOUNDARY>("boundary_face_to_cell_local");
+      BoundaryRead<strict_fp_t> boundary_rdista_local = m_silo.retrieve_entry<strict_fp_t, CDF::StorageType::BOUNDARY>("boundary_rdista_local");
+      
+      for (unsigned int i = 0; i < num_attached; i++)
       {
-         const int cell = boundary_face_to_cell[i];
+         const int cell = boundary_face_to_cell_local[i];
+         
+         const strict_fp_t temp = boundary_rdista_local[i];;
+
+         // Left cell
+         int crs_index = csr_diag_idx_local[cell];
+         A_data_local[crs_index] += temp;
+      }
+   }
+}
+
+void Solver_base::compute_residual(const int num_solved, const int num_attached)
+{
+   // Diffusion term for internal cells
+   VectorRead<int> number_of_neighbors_local = m_silo.retrieve_entry<int, CDF::StorageType::VECTOR>("number_of_neighbors_local");
+   FaceRead<int> cell_neighbors_local = m_silo.retrieve_entry<int, CDF::StorageType::FACE>("cell_neighbors_local");
+   FaceRead<strict_fp_t> rdista_local = m_silo.retrieve_entry<strict_fp_t, CDF::StorageType::FACE>("rdista_local");
+   CellRead<strict_fp_t> Q_cell_local = m_silo.retrieve_entry<strict_fp_t, CDF::StorageType::CELL>("Q_cell_local");
+   Cell<strict_fp_t> residual_local = m_silo.retrieve_entry<strict_fp_t, CDF::StorageType::CELL>("residual_local");
+   
+   for (unsigned int il = 0; il < num_solved; il++)
+   {
+      residual_local[il] = 0.0;
+      for (int jl = number_of_neighbors_local[il]; jl < number_of_neighbors_local[il + 1]; jl++)
+      {
+         const int left = il;
+         const int right = cell_neighbors_local[jl];
+         strict_fp_t face_value = (Q_cell_local[right] - Q_cell_local[left]) * rdista_local[jl];
+         residual_local[left] -= face_value;
+      }
+   }
+   
+   //Diffusion term for boundary cells
+   BoundaryRead<int> boundary_face_to_cell_local = m_silo.retrieve_entry<int, CDF::StorageType::BOUNDARY>("boundary_face_to_cell_local");
+   BoundaryRead<strict_fp_t> Q_boundary_local = m_silo.retrieve_entry<strict_fp_t, CDF::StorageType::BOUNDARY>("Q_boundary_local");
+   BoundaryRead<strict_fp_t> boundary_rdista_local = m_silo.retrieve_entry<strict_fp_t, CDF::StorageType::BOUNDARY>("boundary_rdista_local");
+   
+   for (unsigned int i = 0; i < num_attached; i++)
+   {
+      const int cell = boundary_face_to_cell_local[i];
+
+      const strict_fp_t face_value = (Q_boundary_local[i] - Q_cell_local[cell]) * boundary_rdista_local[i];
+
+      residual_local[cell] -= face_value;
+   }
+   
+   compute_residual_norm(num_solved);
+   
+   if(implicit_solver == true)
+   {
+      Cell<strict_fp_t> rhs_local = m_silo.retrieve_entry<strict_fp_t, CDF::StorageType::CELL>("rhs_local");
+   
+      for (unsigned int il = 0; il < num_solved; il++)
+      {
+         rhs_local[il] = -residual_local[il];
+      }
+   }
+}
+
+void Solver_base::compute_residual_norm(const int num_solved)
+{
+   CellRead<strict_fp_t> residual_local = m_silo.retrieve_entry<strict_fp_t, CDF::StorageType::CELL>("residual_local");
+
+   residual_norm = 0.0;
+   strict_fp_t residual_norm_global = 0.0;
+   for (unsigned int i = 0; i < num_solved; i++)
+   {
+      residual_norm += std::abs(residual_local[i]);
+   }
+   MPI_Allreduce(&residual_norm, &residual_norm_global, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+   residual_norm = residual_norm_global;
+}
+
+void Solver_base::compute_rdist(const int num_solved, const int num_attached)
+{
+   // Diffusion term for interior cells
+   VectorRead<int> number_of_neighbors_local = m_silo.retrieve_entry<int, CDF::StorageType::VECTOR>("number_of_neighbors_local");
+   FaceRead<int> cell_neighbors_local = m_silo.retrieve_entry<int, CDF::StorageType::FACE>("cell_neighbors_local");
+   FaceRead<strict_fp_t> area_local = m_silo.retrieve_entry<strict_fp_t, CDF::StorageType::FACE>("area_local");
+   VectorRead<strict_fp_t> xcen_local = m_silo.retrieve_entry<strict_fp_t, CDF::StorageType::VECTOR>("xcen_local");
+   VectorRead<strict_fp_t> normal_local = m_silo.retrieve_entry<strict_fp_t, CDF::StorageType::VECTOR>("normal_local");
+   Face<strict_fp_t> rdista_local = m_silo.retrieve_entry<strict_fp_t, CDF::StorageType::FACE>("rdista_local");
+   
+   for (unsigned int il = 0; il < num_solved; il++)
+   {
+      for (int jl = number_of_neighbors_local[il]; jl < number_of_neighbors_local[il + 1]; jl++)
+      {
+         const int left = il;
+         const int right = cell_neighbors_local[jl];
 
          strict_fp_t distance;
-         if (std::abs(boundary_normal[2 * i]) > 0.1)      // x face
+         if(std::abs(normal_local[2 * jl]) > 0.1)      // x face
          {
-            distance = std::abs(boundary_xcen[2 * i] - xcen[2 * cell]);
+            distance = std::abs(xcen_local[2 * right] - xcen_local[2 * left]);
          }
          else
          {
-            distance = std::abs(boundary_xcen[(2 * i) + 1] - xcen[(2 * cell) + 1]);
+            distance = std::abs(xcen_local[(2 * right) + 1] - xcen_local[(2 * left) + 1]);
          }
-         const strict_fp_t grad_Q = (Q_boundary[i] - Q_cell[cell]) / distance;
-
-         const strict_fp_t face_value = grad_Q * boundary_area[i];
-
-         residual[cell] -= face_value;
-
-         const strict_fp_t temp = 1.0 / distance * boundary_area[i];
-
-         // Left cell
-         int crs_index = csr_diag_idx[cell];
-         A_data[crs_index] += temp;
-      }
-
-      compute_residual_norm();
-      for (unsigned int i = 0; i < this->num_cells; i++)
-      {
-         rhs[i] = -residual[i];
+         
+         rdista_local[jl] = 1.0 / distance * area_local[jl];
       }
    }
+
+   // Diffusion term for boundary cells
+   VectorRead<int> ranks_list = m_silo.retrieve_entry<int, CDF::StorageType::VECTOR>("ranks_list");
+   VectorRead<int> global_local = m_silo.retrieve_entry<int, CDF::StorageType::VECTOR>("global_local");
+   BoundaryRead<int> boundary_face_to_cell_local = m_silo.retrieve_entry<int, CDF::StorageType::BOUNDARY>("boundary_face_to_cell_local");
+   BoundaryRead<strict_fp_t> boundary_area_local = m_silo.retrieve_entry<strict_fp_t, CDF::StorageType::BOUNDARY>("boundary_area_local");
+   VectorRead<strict_fp_t> boundary_xcen_local = m_silo.retrieve_entry<strict_fp_t, CDF::StorageType::VECTOR>("boundary_xcen_local");
+   VectorRead<strict_fp_t> boundary_normal_local = m_silo.retrieve_entry<strict_fp_t, CDF::StorageType::VECTOR>("boundary_normal_local");
+   Boundary<strict_fp_t> boundary_rdista_local = m_silo.retrieve_entry<strict_fp_t, CDF::StorageType::BOUNDARY>("boundary_rdista_local");
+   
+   for (unsigned int i = 0; i < num_attached; i++)
+   {
+      const int cell = boundary_face_to_cell_local[i];
+
+      strict_fp_t distance;
+      if (std::abs(boundary_normal_local[2 * i]) > 0.1)      // x face
+      {
+         distance = std::abs(boundary_xcen_local[2 * i] - xcen_local[2 * cell]);
+      }
+      else
+      {
+         distance = std::abs(boundary_xcen_local[(2 * i) + 1] - xcen_local[(2 * cell) + 1]);
+      }
+      boundary_rdista_local[i] = 1.0 / distance * boundary_area_local[i];
+   }
+}
+
+void Solver_base::mpi_nbr_communication(strict_fp_t* vecg)
+{
+   mpi_nbnb_transfer(vecg);
+}
+
+strict_fp_t Solver_base::print_residual_norm(const int time_iter)
+{
+   if(rank == 0)
+      printf("Time iter: %d, Residual %0.16e\n", time_iter, residual_norm);
+
+   return residual_norm;
+}
+
+strict_fp_t Solver_base::get_residual_norm()
+{
+   return residual_norm;
 }

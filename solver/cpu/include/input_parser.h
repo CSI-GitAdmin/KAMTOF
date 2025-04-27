@@ -8,10 +8,10 @@ class InputParser
 {
 public:
 
-    bool use_gpu_solver  = false; // Flag to control whether the code will be run on gpu or CPU
-    bool implicit_solver = false; // Use implicit formulation of solver
-    int  Nx              = 11;    // Number of grid points in the x-direction
-    int  Ny              = 11;    // Number of grid points in the y-direction
+    bool use_gpu_solver  = true;  // Flag to control whether the code will be run on gpu or CPU
+    bool implicit_solver = true;  // Use implicit_solver formulation of solver
+    int  Nx              = 100;   // Number of grid points in the x-direction
+    int  Ny              = 100;   // Number of grid points in the y-direction
     int  tol_type        = 0;     // Type of tolerance to be used by the solver: 0 ==> Absolute tol, 1 ==> Relative tol
     int  solver_type     = 0;     // Type of linear solver: 0 ==> Jacobi, 1 ==> BiCGSTAB
     int  num_iter        = 10;    // Number of itrerations that the linear solver will perform
@@ -29,6 +29,8 @@ public:
 
     InputParser(std::string input_file);
 
+    InputParser();
+
     void read_inputs(const std::string& input_filename);
     
     std::string find_input_option(const std::vector<std::string>& input_strings,
@@ -44,7 +46,7 @@ public:
     template <typename T>
     void print_variable_value(std::string& varname, T& value);
 
-    std::string input_filename;                    
+    std::string input_filename = "NULL"; // default name of input filename                    
 };
 
 #endif /* INPUT_PARSER_H*/

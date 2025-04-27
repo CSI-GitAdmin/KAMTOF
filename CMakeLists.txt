@@ -4,9 +4,9 @@ cmake_minimum_required( VERSION 3.20 )
 
 set( CMAKE_CXX_STANDARD 23 )
 
-project( "SOLVER using GPU Framework" )
+project( "Laplace solver using KAMTOF" )
 
-find_package (MPI REQUIRED )
+find_package (MPI REQUIRED)
 
 # Pass the Device flag to the solver source code
 if(NOT DEFINED ENABLE_GPU) # By default build the ENABLE GPU ON VERSION
@@ -49,7 +49,7 @@ if(ENABLE_GPU)
       add_definitions(-DGPU_DEVELOP)
       message(STATUS "Building with GPU_DEVELOP Mode ON. Please compile with -DGPU_DEVELOP=OFF to disable GPU development mode")
    else()
-      message(STATUS "Building with GPU_DEVELOP Mode OFF. Please compile with -DGPU_DEVELOP=ON to disable GPU development mode")
+      message(STATUS "Building with GPU_DEVELOP Mode OFF. Please compile with -DGPU_DEVELOP=ON to enable GPU development mode")
    endif()
 
    # Options to know which devices we are doing AOT for
@@ -266,7 +266,7 @@ if (ENABLE_GPU)
       $ENV{GPU_FRAMEWORK_DIR}/include
       $ENV{GPU_FRAMEWORK_DIR}/include/detail
       $ENV{GPU_FRAMEWORK_DIR}/include/util)
-   target_link_libraries(solver cpu_framework gpu_framework)
+   target_link_libraries(solver cpu_framework gpu_framework MPI::MPI_CXX)
 else()
-   target_link_libraries(solver cpu_framework)
+   target_link_libraries(solver cpu_framework MPI::MPI_CXX)
 endif()
