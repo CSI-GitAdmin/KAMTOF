@@ -5,11 +5,22 @@ KAMTOF is a SYCL based GPU data framework for rapid incremental GPU porting of a
 ## Building KAMTOF
 
 KAMTOF requires the following tools:
-- Intel oneAPI toolkit version 2025.0+
-- oneMath
-- CUDA toolkit (If compiling for NVIDIA GPUs)
-- ROCm toolkit (If compiling for AMD GPUs)
-- Intel OCLOC (If compiling for INTEL GPUs) 
+- Intel oneAPI toolkit version 2025.1+
+- oneMath v0.7 (Built with support for BLAS and SPARSE libraries of all 3 vendors)
+- CUDA toolkit v12.2+
+- ROCm toolkit v6.2+
+- HPCX MPI Library 2.21+
+- Intel OCLOC
+
+## Environment Setup script
+
+KAMTOF provides an environment [setup script](README.md) in the scripts folder to setup the environment needed for building. The setup script requires the following environment variables to be setup:
+- ONEAPI_ROOT
+- CUDA_ROOT
+- ROCM_ROOT
+- ONEMATH_ROOT
+- HPCX_ROOT
+
 
 ### CMake options
 
@@ -64,4 +75,4 @@ KAMTOF contains 3 different executables including unit tests and the Laplace sol
 - `cpu_framework/cpu_framework_test` : Test certain basic functionalities of the CPU framework (Will not be built is ENABLE_GPU is ON)
 - `gpu_framework/gpu_framework_test` : Test certain basic functionalities of the GPU framework
 - `solver` : The actual Laplace Solver
-  - The solver inputs are all command line inputs: `./solver <Nx> <Ny> <num_time_steps> <gpu_solver_bool>`
+  - The input files for the solver are placed in the input_files folder
