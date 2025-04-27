@@ -14,7 +14,7 @@ KAMTOF requires the following tools:
 
 ## Environment Setup script
 
-KAMTOF provides an environment [setup script](README.md) in the scripts folder to setup the environment needed for building. The setup script requires the following environment variables to be setup:
+KAMTOF provides an environment [setup script](scripts/setup_env.sh) in the scripts folder to setup the environment needed for building. The setup script requires the following environment variables to be setup:
 - ONEAPI_ROOT
 - CUDA_ROOT
 - ROCM_ROOT
