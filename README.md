@@ -44,7 +44,7 @@ The [build script](scipts/build.sh) can be run to build KAMTOF once the appropri
 
 For most users, simply executing `./scripts/build.sh` will compile KAMTOF in *RELEASE* mode (i.e., -O3 optimizations). For more information on compilation options, please execute `./scripts/build.sh -h`.
 
-The default location for the build directory is one level above the KAMTOF base directory (`../build` for *RELEASE* mode and `../build_debug` for *DEBUG* mode). 
+The default location for the build directory is one level above the KAMTOF base directory (`../build_release` for *RELEASE* mode and `../build_debug` for *DEBUG* mode). 
 
 [build_kamtof.sh](scripts/build_kamtof.sh) can be used to compile KAMTOF in both *RELEASE* and *DEBUG* modes by invoking `./scripts/build_kamtof.sh`.
 
