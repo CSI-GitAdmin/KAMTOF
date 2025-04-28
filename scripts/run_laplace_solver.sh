@@ -48,9 +48,9 @@ usage()
     All options have defaults and are optional and case sensiitive.
     ${CLEAR}
     ${UNDERLINE}OPTIONS:${CLEAR}
-    ${BOLD}-x <nx>${CLEAR} default:${BOLD} 500${CLEAR}
+    ${BOLD}-x <nx>${CLEAR} default:${BOLD} 1000${CLEAR}
                 Number of grid cells in the x-direction.
-    ${BOLD}-y <ny>${CLEAR} default:${BOLD} 500${CLEAR}
+    ${BOLD}-y <ny>${CLEAR} default:${BOLD} 1000${CLEAR}
                 Number of grid cells in the y-direction.
     ${BOLD}-n <num_procs>${CLEAR}  default:${BOLD} 1${CLEAR}
                 Number of processes to use for the CPU based code.
@@ -59,7 +59,7 @@ usage()
                 Base directory where the CPU & GPU solvers will be run.
     ${BOLD}-o <overwrite_output>${CLEAR}  default:${BOLD} FALSE ${CLEAR}
                 Overwrite old base directory if it exists.
-    ${BOLD}-t <tol_val>${CLEAR}  default:${BOLD} 0.01 ${CLEAR}
+    ${BOLD}-t <tol_val>${CLEAR}  default:${BOLD} 1000 ${CLEAR}
                 Numerical tolerance for solver at which it will stop.
     ${BOLD}-h <help>${CLEAR}          Print this help text. 
     ${CLEAR}
@@ -98,13 +98,13 @@ gather_options()
     # Number of grid cells in the x-direction
     if [ -z ${NX} ]
     then
-        NX="500"
+        NX="1000"
     fi
 
     # Number of grid cells in the y-direction
     if [ -z ${NY} ]
     then
-        NY="500"
+        NY="1000"
     fi
 
     # Number of processors to be used for the CPU run
@@ -113,7 +113,7 @@ gather_options()
         NPROCS=1
     fi
 
-    # Executable name
+    # Path to base directory
     if [ -z ${BASE_DIR} ]
     then
         BASE_DIR="${KAMTOF_ROOT}/../laplace_solve"
@@ -128,7 +128,7 @@ gather_options()
     # Numerical tolerance for solver
     if [ -z ${TOL_VAL} ]
     then
-        TOL_VAL="500"
+        TOL_VAL="1000"
     fi
 
   return 0

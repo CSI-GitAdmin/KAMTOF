@@ -140,7 +140,7 @@ usage()
     Current directory: ${BOLD}${PWD}${CLEAR}
 
     All options have defaults and are optional. The default folders assume the 
-    script is run from the scripts folder in the KAMTOF source code (${BLUE}./kamtof/scripts${CLEAR}).
+    script is run from the scripts folder in the KAMTOF source code (${BLUE}./KAMTOF/scripts${CLEAR}).
     The default ${BLUE}${BOLD}build${CLEAR} and ${BLUE}${BOLD}bin${CLEAR} directories will be created two levels above the scripts directory.
     
     The following dependencies are required:
@@ -157,7 +157,7 @@ usage()
                 This directory will exist inside the base directory.
                 The executable will also be placed in this directory.
     ${BOLD}-t <build_type>${CLEAR}    default:${BOLD} RELEASE${CLEAR}
-    ${BOLD}-j <num_proc>${CLEAR}      default:${BOLD} `nproc --all`${CLEAR}
+    ${BOLD}-j <num_proc>${CLEAR}      default:${BOLD} 4${CLEAR}
                 Number of processors to be used for compilation.
                 The default is the maximum number of processors on this machine
                 (computed using the 'nproc --all' command)
@@ -209,7 +209,7 @@ set_defaults()
     # Number of threads to be used for building code
     if [ -z ${THREAD_COUNT} ]
     then
-        THREAD_COUNT=$(nproc --all)
+        THREAD_COUNT="4"
     fi
 
     # Clone KAMTOF or use locally available source code
@@ -414,7 +414,7 @@ compile_kamtof()
     # Error message to be displayed in case of failure
     ERROR_MSG="\r${INFO_SUBLEVEL_PREFIX} Configure...${RED}${BOLD}FAILED${CLEAR}. Please check log file: ${CONFIGURE_LOG}"
     
-    cmake ${SRC_DIR}/kamtof -DCMAKE_BUILD_TYPE=${BLD_TYPE} > ${CONFIGURE_LOG} 2>&1
+    cmake ${SRC_DIR}/KAMTOF -DCMAKE_BUILD_TYPE=${BLD_TYPE} > ${CONFIGURE_LOG} 2>&1
     check_error_status ${PIPESTATUS[0]} "${ERROR_MSG}"
     
     # Success message

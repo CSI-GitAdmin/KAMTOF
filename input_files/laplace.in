@@ -1,8 +1,8 @@
-use_gpu_solver:  0
+use_gpu_solver:  1
 implicit_solver: 1
-Nx:              21
-Ny:              21
+Nx:              1000
+Ny:              1000
 tol_type:        abs 
-tol_val:         0.01
+tol_val:         1000
 num_iter:        10
 solver_type:     jacobi
