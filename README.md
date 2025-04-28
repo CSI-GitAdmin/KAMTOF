@@ -34,11 +34,11 @@ These are the CMake options provided by KAMTOF. Please preface all these options
   - Options: ON/OFF
   - Default: OFF
  
-- GPU_DEVELOP : Turns ON GPU development mode in which we incur the cost of branching inside the CPU operators for achieving fully automatic data transfer
+- GPU_DEVELOP : Turns ON GPU development mode which enables automatic data transfers to the CPU. This negatively impacts the performance of the CPU data access operators. 
   - Options: ON/OFF
   - Default: ON
  
-- BUILD_XDF_TESTS :  Flag to turn ON the unit tests builds for the CPU Data Framework (CDF) and GPU Data Framework (GDF). Note that currently CDF unit tests are not built when ENABLE_GPU is ON
+- BUILD_XDF_TESTS :  Flag to turn ON the unit-test builds for the CPU Data Framework (CDF) and GPU Data Framework (GDF). Note that currently CDF unit tests are not built when ENABLE_GPU is ON
   - Options: ON/OFF
   - Default: ON
 
@@ -50,6 +50,7 @@ These are the CMake options provided by KAMTOF. Please preface all these options
     - SYCLCPU: Compile for x86 CPUs
     - ALL: Compile for all of the above
   - Default: ALL
+  - NOTE: SYCLCPU is always added to the HW list
  
 - SM : Specify the architecture of NVIDIA GPUs to target
   - Options: 61/70/75/80/86 etc.
@@ -59,20 +60,18 @@ These are the CMake options provided by KAMTOF. Please preface all these options
   - Options: 942a/1100/1101 etc.
   - Default: 1100
  
-NOTE: SYCLCPU is turned added to HW list by default irrespective of the HW chosen 
- 
 Here is an example of a CMake command to build for Intel and NVIDIA GPUs (arch 86) without the GPU_DEVELOP option in debug mode:
 
 ```
 mkdir build_release
 cd build_release
-cmake -DCMAKE_BUILD_TYPE=DEBUG -DENABLE_GPU=ON -DGPU_DEVELOP=OFF -DHW='INTGPU;NVDGPU' ../  
+cmake -DCMAKE_BUILD_TYPE=DEBUG -DENABLE_GPU=ON -DHW='INTGPU;NVDGPU' ../  
 ```
 
 ## Running KAMTOF
 
-KAMTOF contains 3 different executables including unit tests and the Laplace solver 
+KAMTOF contains 3 different executables: 
 - `cpu_framework/cpu_framework_test` : Test certain basic functionalities of the CPU framework (Will not be built is ENABLE_GPU is ON)
 - `gpu_framework/gpu_framework_test` : Test certain basic functionalities of the GPU framework
 - `solver` : The actual Laplace Solver
-  - The input files for the solver are placed in the input_files folder
+  - The input files, [laplace.in](input_files/laplace.in), for the solver are placed in the [input_files](input_files) folder
