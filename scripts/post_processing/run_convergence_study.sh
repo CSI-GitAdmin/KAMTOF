@@ -55,7 +55,7 @@ usage()
                 Only two valid options: ${BOLD}${RED}cpu${CLEAR} and ${BOLD}${RED}gpu${CLEAR}.
     ${BOLD}-o <overwrite_output>${CLEAR}  default:${BOLD} FALSE ${CLEAR}
                 Overwrite old output directory if it exists.
-    ${BOLD}-n <num_procs>${CLEAR}  default:${BOLD} 4${CLEAR}
+    ${BOLD}-n <num_procs>${CLEAR}  default:${BOLD} 1${CLEAR}
     ${BOLD}-h <help>${CLEAR}          Print this help text. 
     ${CLEAR}
 END
@@ -109,7 +109,7 @@ gather_options()
     # Number of procs
     if [ -z ${NPROCS} ]
     then
-        NPROCS="4"
+        NPROCS="1"
     fi
 
   return 0
