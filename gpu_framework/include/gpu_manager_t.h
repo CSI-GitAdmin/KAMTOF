@@ -23,7 +23,7 @@ public:
     * Also, this only accepts an array of 3 integers, rather than an array of arbitrary size (which will happen if we use "uint64_t glob_range[3]")
    */
    GPUManager_t(sycl_device_t deviceType, const uint64_t (&glob_range)[3], const uint64_t (&locl_range)[3], const std::string& device_name = ""):
-      m_que (custom_device_selector(deviceType, device_name, true)),
+      m_que (custom_device_selector(deviceType, device_name)),
       global_range{glob_range[0], glob_range[1], glob_range[2]}, local_range{locl_range[0], locl_range[1], locl_range[2]},
       HtoD_memcpy_counter(0), DtoH_memcpy_counter(0), DtoD_memcpy_counter(0)
    {

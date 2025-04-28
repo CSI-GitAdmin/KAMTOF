@@ -47,7 +47,7 @@ usage()
     All options have defaults and are optional and case sensiitive.
     ${CLEAR}
     ${UNDERLINE}OPTIONS:${CLEAR}
-    ${BOLD}-r <run_directory>${CLEAR} default:${BOLD} output${CLEAR}
+    ${BOLD}-r <run_directory>${CLEAR} default:${BOLD} ${KAMTOF_ROOT}/../output${CLEAR}
                 Directory where the output from the study will be stored.
                 This path is relative to the current directory.
     ${BOLD}-d <device_type>${CLEAR}  default:${BOLD} gpu ${CLEAR}
@@ -55,9 +55,7 @@ usage()
                 Only two valid options: ${BOLD}${RED}cpu${CLEAR} and ${BOLD}${RED}gpu${CLEAR}.
     ${BOLD}-o <overwrite_output>${CLEAR}  default:${BOLD} FALSE ${CLEAR}
                 Overwrite old output directory if it exists.
-    ${BOLD}-n <num_procs>${CLEAR}  default:${BOLD} `nproc --all`${CLEAR}
-    ${BOLD}-e <exec_name>${CLEAR}  default:${BOLD} kamtof${CLEAR}
-                Name of executable to be used for performing convergence study.
+    ${BOLD}-n <num_procs>${CLEAR}  default:${BOLD} 4${CLEAR}
     ${BOLD}-h <help>${CLEAR}          Print this help text. 
     ${CLEAR}
 END
@@ -71,13 +69,12 @@ END
 # --------------------------------------------------------------------------------------------------
 gather_options() 
 {
-    while getopts "h-:r:d:o:n:e:" OPTION; do
+    while getopts "h-:r:d:o:n:" OPTION; do
         case ${OPTION} in
         r     ) RUN_DIR=${OPTARG}    ;;
         d     ) DEVICE=${OPTARG}     ;;
         o     ) OVERWRITE=${OPTARG}  ;;
         n     ) NPROCS=${OPTARG}     ;;
-        e     ) EXEC_NAME=${OPTARG}  ;;
         h     ) usage
                 exit 0;;
         -     )
@@ -94,7 +91,7 @@ gather_options()
     # Set ./output as default output directory for results
     if [ -z ${RUN_DIR} ]
     then
-        RUN_DIR="./output"
+        RUN_DIR="${KAMTOF_ROOT}/../output"
     fi
 
     # Set CPU as default device
@@ -113,12 +110,6 @@ gather_options()
     if [ -z ${NPROCS} ]
     then
         NPROCS="4"
-    fi
-
-    # Executable name
-    if [ -z ${EXEC_NAME} ]
-    then
-        EXEC_NAME="kamtof"
     fi
 
   return 0
@@ -262,30 +253,60 @@ load_dependencies()
 }
 
 # --------------------------------------------------------------------------------------------------
+# Setup environment for KAMTOF using script
+# --------------------------------------------------------------------------------------------------
+setup_environment_using_script()
+{
+    # Set the KAMTOF root directory
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    export KAMTOF_ROOT="$(dirname "$(dirname "${SCRIPT_DIR}")")"
+
+    source ${KAMTOF_ROOT}/scripts/setup_env.sh
+}
+
+# --------------------------------------------------------------------------------------------------
+# Load dependencies using scripts
+# --------------------------------------------------------------------------------------------------
+load_dependencies_using_script()
+{
+    # Load required modules for KAMTOF
+    echo -e "${INFO_PREFIX} Loading dependencies using scripts for KAMTOF."
+    
+    # Error message to be displayed in case of failure
+    ERROR_MSG="${ERROR_PREFIX} Could not load dependencies."
+
+    #Error checking
+    setup_environment_using_script
+    check_error_status ${PIPESTATUS[0]} "${ERROR_MSG}"
+
+    return 0
+}
+
+# --------------------------------------------------------------------------------------------------
 # Start MAIN script
 # --------------------------------------------------------------------------------------------------
+
+# Load dependencies
+load_dependencies_using_script
+
 
 # Collect input options
 gather_options $@
 
-# Remove old solver executable if it exists
-if [[ -x ${EXEC_NAME} ]]
-then
-    unlink ${EXEC_NAME}
-fi
-
 # Check that the build directory exists and it contains an executable
-BUILD_DIR="../../../build"
+BUILD_DIR="${KAMTOF_ROOT}/../build_release"
+EXE="${BUILD_DIR}/solver"
+
 if [[ -d ${BUILD_DIR} ]]
 then
     echo -e "${INFO_PREFIX} ${GREEN}bin${CLEAR} directory found at \"${BUILD_DIR}\"."
 
     # Check if solver executable exists
-    if [[ -x "${BUILD_DIR}/solver" ]]
+    if [[ -x "${EXE}" ]]
     then
         echo -e "${INFO_PREFIX} ${GREEN}solver${CLEAR} executable found in \"${BUILD_DIR}\"."
     else        
-        echo -e "${ERROR_PREFIX} Executable \"solver\" ${RED}not found${CLEAR} in ${BUILD_DIR}."
+        echo -e "${ERROR_PREFIX} Executable \"${EXE}\" ${RED}not found${CLEAR} in ${BUILD_DIR}."
         exit 5
     fi
 else      
@@ -293,19 +314,13 @@ else
     exit 5
 fi
 
-# Soft-link executable from BUILD_DIR to current directory
-ln -sf ${BUILD_DIR}/solver ${EXEC_NAME}
-
 # Get list of dynamically linked dependencies
-ldd ${BUILD_DIR}/solver > ldd.log 2>&1
-
-# Load dependencies
-load_dependencies
+ldd ${EXE} > ${RUN_DIR}/ldd.log 2>&1
 
 # Check dependencies
 check_all_dependencies
 
-TEMP_FILE="laplace_template.in"
+TEMP_FILE="${KAMTOF_ROOT}/scripts/post_processing/laplace_template.in"
 
 echo -e "${INFO_PREFIX} Executing script to perform order of accuracy study."
 
@@ -352,9 +367,6 @@ GRID_LIST=""
 
 echo -e "${INFO_PREFIX} Starting loop..."
 
-# Path to solver executable
-SOLVER_LINK=$(readlink -f ${EXEC_NAME})
-
 # Save current directory for later
 CURR_DIR=${PWD}
 
@@ -387,9 +399,6 @@ do
     # Switch directory to case directory
     cd ${CASE_DIR}
 
-    # Soft link solver to current location
-    ln -sf ${SOLVER_LINK} ${EXEC_NAME}
-
     # Execute solver
     LOG_FILE="run_nx_${nx}.log"
 
@@ -397,11 +406,8 @@ do
     ERROR_MSG="${ERROR_PREFIX} Run failed. Please check log file: ${CASE_DIR}/${LOG_FILE}"
 
     # Error checking
-    mpirun -np ${NPROCS} ${EXEC_NAME} ${OUTFILENAME} > ${LOG_FILE} 2>&1
+    mpirun -np ${NPROCS} ${EXE} ${OUTFILENAME} > ${LOG_FILE} 2>&1
     check_error_status ${PIPESTATUS[0]} "${ERROR_MSG}"
-
-    # unlink executable
-    unlink ${EXEC_NAME}
 
     # Change directories back to where script is being run
     cd ${CURR_DIR}
@@ -418,7 +424,7 @@ PYTHON_LOG="${RUN_DIR}/order.log"
 # Create comma-delimited list of grid sizes to be passed on to Python
 GRID_LIST="${GRID_LIST%?}"
 
-python3 analytical_laplace_solution.py ${GRID_LIST} ${RUN_DIR} ${DEVICE} 2>&1 | tee ${PYTHON_LOG}
+python3 ${KAMTOF_ROOT}/scripts/post_processing/analytical_laplace_solution.py ${GRID_LIST} ${RUN_DIR} ${DEVICE} 2>&1 | tee ${PYTHON_LOG}
 
 # Store exit code from python script
 EXIT_CODE=${PIPESTATUS[0]}

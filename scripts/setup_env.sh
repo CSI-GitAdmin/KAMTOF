@@ -14,6 +14,9 @@ function require_env_var {
     fi
 }
 
+# Source the script to set the root folders
+source ${KAMTOF_ROOT}/scripts/export_roots.sh
+
 # Check all required environment variables
 require_env_var HPCX_ROOT
 require_env_var CUDA_ROOT

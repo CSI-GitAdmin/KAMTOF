@@ -52,15 +52,15 @@ usage()
                 Number of grid cells in the x-direction.
     ${BOLD}-y <ny>${CLEAR} default:${BOLD} 500${CLEAR}
                 Number of grid cells in the y-direction.
-    ${BOLD}-n <num_procs>${CLEAR}  default:${BOLD} `nproc --all`${CLEAR}
+    ${BOLD}-n <num_procs>${CLEAR}  default:${BOLD} 1${CLEAR}
                 Number of processes to use for the CPU based code.
                 The GPU solver will only be executed on a single GPU card.
-    ${BOLD}-e <exec_name>${CLEAR}  default:${BOLD} kamtof${CLEAR}
-                Name of executable.
-    ${BOLD}-r <run_dir>${CLEAR}  default:${BOLD} ../../laplace_solve${CLEAR}
+    ${BOLD}-r <run_dir>${CLEAR}  default:${BOLD} ${KAMTOF_ROOT}/../laplace_solve${CLEAR}
                 Base directory where the CPU & GPU solvers will be run.
     ${BOLD}-o <overwrite_output>${CLEAR}  default:${BOLD} FALSE ${CLEAR}
                 Overwrite old base directory if it exists.
+    ${BOLD}-t <tol_val>${CLEAR}  default:${BOLD} 0.01 ${CLEAR}
+                Numerical tolerance for solver at which it will stop.
     ${BOLD}-h <help>${CLEAR}          Print this help text. 
     ${CLEAR}
 END
@@ -74,14 +74,14 @@ END
 # --------------------------------------------------------------------------------------------------
 gather_options() 
 {
-    while getopts "h-:x:y:n:e:r:o:" OPTION; do
+    while getopts "h-:x:y:n:r:o:t:" OPTION; do
         case ${OPTION} in
         x    ) NX=${OPTARG}        ;;
         y    ) NY=${OPTARG}        ;;
         n    ) NPROCS=${OPTARG}    ;;
-        e    ) EXEC_NAME=${OPTARG} ;;
         r    ) BASE_DIR=${OPTARG}  ;;
         o    ) OVERWRITE=${OPTARG} ;;
+        t    ) TOL_VAL=${OPTARG}   ;;
         h    ) usage
                 exit 0;;
         -     )
@@ -110,25 +110,25 @@ gather_options()
     # Number of processors to be used for the CPU run
     if [ -z ${NPROCS} ]
     then
-        NPROCS=`nproc --all`
-    fi
-
-    # Executable name
-    if [ -z ${EXEC_NAME} ]
-    then
-        EXEC_NAME="kamtof"
+        NPROCS=1
     fi
 
     # Executable name
     if [ -z ${BASE_DIR} ]
     then
-        BASE_DIR="../../laplace_solve"
+        BASE_DIR="${KAMTOF_ROOT}/../laplace_solve"
     fi
 
     # Option to overwrite base directory if it exists
     if [ -z ${OVERWRITE} ]
     then
         OVERWRITE="FALSE"
+    fi
+
+    # Numerical tolerance for solver
+    if [ -z ${TOL_VAL} ]
+    then
+        TOL_VAL="500"
     fi
 
   return 0
@@ -198,7 +198,7 @@ check_error_status()
 # --------------------------------------------------------------------------------------------------
 # Load dependencies
 # --------------------------------------------------------------------------------------------------
-load_dependencies()
+load_dependencies_using_modules()
 {
     # Load required modules for KAMTOF
     MODULE_LOG=module.log
@@ -290,9 +290,6 @@ setup_case_dir()
     # Change directory into case dir to enable softlinking
     cd ${CASE_DIR}
 
-    # Soft link executable in the directories
-    ln -sf ${CURR_DIR}/../../build/solver ${EXEC_NAME}
-
     # Change directory back to previous location
     cd ${CURR_DIR}
 
@@ -307,7 +304,7 @@ setup_case_dir()
 check_executable()
 {
     # Check that the build directory exists and it contains an executable
-    BUILD_DIR="../../build"
+    BUILD_DIR="${KAMTOF_ROOT}/../build_release"
     if [[ -d ${BUILD_DIR} ]]
     then
         echo -e "${INFO_PREFIX} ${GREEN}bin${CLEAR} directory found at \"${BUILD_DIR}\"."
@@ -339,7 +336,7 @@ create_input_file()
     echo "Nx:              ${NX}" >> ${INPUTFILE}
     echo "Ny:              ${NY}" >> ${INPUTFILE}
     echo "tol_type:        abs" >> ${INPUTFILE}
-    echo "tol_val:         0.01" >> ${INPUTFILE}
+    echo "tol_val:         ${TOL_VAL}" >> ${INPUTFILE}
     echo "num_iter:        10" >> ${INPUTFILE}
     echo "solver_type:     jacobi" >> ${INPUTFILE}
 }
@@ -388,16 +385,10 @@ run_solver()
     local INPUTFILE="laplace_${CASETYPE}.in"
 
     # Set error message to be displayed if command fails
-    ERROR_MSG="${CASETYPE} run ${RED}${BOLD}FAILED${CLEAR}. Please check log file: ${LOG_FILE}"
-
-    # For GPUs, only a single GPU card is allowed for now
-    if [ ${CASETYPE} == "gpu" ]
-    then
-        NPROCS="1"
-    fi
+    ERROR_MSG="${CASETYPE} run ${RED}${BOLD}FAILED${CLEAR}. Please check log file: ${CASE_DIR}/${LOG_FILE}"
 
     # Check error status
-    mpirun -np ${NPROCS} ./${EXEC_NAME} ${INPUTFILE} > ${LOG_FILE} 2>&1
+    mpirun -np ${NPROCS} ${BUILD_DIR}/solver ${INPUTFILE} > ${LOG_FILE} 2>&1
     check_error_status ${PIPESTATUS[0]} "${ERROR_MSG}"
 
     # Get run time from the log file
@@ -414,17 +405,49 @@ run_solver()
 }
 
 # --------------------------------------------------------------------------------------------------
+# Setup environment for KAMTOF using script
+# --------------------------------------------------------------------------------------------------
+setup_environment_using_script()
+{
+    # Set the KAMTOF root directory
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    export KAMTOF_ROOT="$(dirname "${SCRIPT_DIR}")"
+
+    source ${KAMTOF_ROOT}/scripts/setup_env.sh
+}
+
+# --------------------------------------------------------------------------------------------------
+# Load dependencies using scripts
+# --------------------------------------------------------------------------------------------------
+load_dependencies_using_script()
+{
+    # Load required modules for KAMTOF
+    echo -e "${INFO_PREFIX} Loading dependencies using scripts for KAMTOF."
+    
+    # Error message to be displayed in case of failure
+    ERROR_MSG="${ERROR_PREFIX} Could not load dependencies."
+
+    #Error checking
+    setup_environment_using_script
+    check_error_status ${PIPESTATUS[0]} "${ERROR_MSG}"
+
+    return 0
+}
+
+
+
+# --------------------------------------------------------------------------------------------------
 # MAIN Function
 # --------------------------------------------------------------------------------------------------
 main()
 {
     echo -e "${INFO_PREFIX} Running CPU and GPU solvers for KAMTOF."
 
+    # Load dependencies for KAMTOF
+    load_dependencies_using_script
+
     # Gather command line input arguments
     gather_options $@
-
-    # Load dependencies for KAMTOF
-    load_dependencies
 
     # Check dependencies
     check_all_dependencies

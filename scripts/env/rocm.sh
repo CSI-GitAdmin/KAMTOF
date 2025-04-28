@@ -10,6 +10,7 @@ fi
 echo "Using ROCM_ROOT=${ROCM_ROOT}"
 
 # Export environment variables
+export ROCM_PATH=${ROCM_ROOT}
 export HIP_PATH=${ROCM_ROOT}
 
 # Prepend/append paths

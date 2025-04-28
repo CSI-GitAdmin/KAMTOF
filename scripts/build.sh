@@ -8,12 +8,27 @@ RED='\033[0;31m'
 BLUE='\033[0;34m'
 GREEN='\033[0;32m'
 ERROR_COLOR="${RED}${BOLD}"
-ERROR_PREFIX="${ERROR_COLOR}[ERROR]${CLEAR}"
+ERROR_PREFIX="\n${ERROR_COLOR}[ERROR]${CLEAR}"
 INFO_PREFIX="${BLUE}${BOLD}[I]${CLEAR}"
 TIME_PREFIX="${RED}[T]${CLEAR}"
 INFO_SUBLEVEL_PREFIX="-->"
 INFO_SUCCESS="${GREEN}${BOLD}[I]${CLEAR}"
-WARNING_PREFIX="${BOLD}[W]${CLEAR}"
+WARNING_PREFIX="${BOLD}[WARNING]${CLEAR}"
+
+# --------------------------------------------------------------------------------------------------
+# Safe exit to make sure exit does not close terminal
+# --------------------------------------------------------------------------------------------------
+safe_exit() 
+{
+    local EXIT_CODE=$1
+    if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+        # Script is being executed (not sourced), so exit normally
+        exit "${EXIT_CODE}"
+    else
+        # Script is being sourced, so use 'return'
+        return "${EXIT_CODE}"
+    fi
+}
 
 # --------------------------------------------------------------------------------------------------
 # Timing function
@@ -41,10 +56,18 @@ check_error_status()
     local EXIT_CODE=$1
     local ERROR_MSG=$2
 
-    if [[ ${EXIT_CODE} -ne 0 ]]
+    GLOBAL_ERROR_CODE=0
+
+    if [[ ${EXIT_CODE} -gt 0 ]]
     then
-        echo -e "${ERROR_MSG}"
-        exit 5
+        GLOBAL_ERROR_CODE=5
+        echo -e "${ERROR_PREFIX} ${ERROR_MSG}"
+        safe_exit ${GLOBAL_ERROR_CODE}
+    elif [[ ${EXIT_CODE} -lt 0 ]]
+    then
+        echo -e "${WARNING_PREFIX} ${ERROR_MSG}"
+        GLOBAL_ERROR_CODE=6
+        return ${GLOBAL_ERROR_CODE}
     fi
 
     return 0
@@ -64,7 +87,7 @@ system_check()
     Cygwin         ) UNAME_OS="cygwin" ;; 
     Darwin         ) UNAME_OS="mac"    ;; 
     *              ) echo -e "${ERROR_PREFIX}: Unknown operating system type."
-        exit 1 ;;
+        safe_exit 1 ;;
     esac
 
     # Get hardware information
@@ -72,7 +95,7 @@ system_check()
     x86_64 )          UNAME_HW="x64"   ;;
     aarch64)         UNAME_HW="arm64" ;;
     *      ) echo -e "${ERROR_PREFIX}: Unknown processor (hardware) type."
-        exit 1 ;;
+        safe_exit 1 ;;
     esac
 
     read -r -d '' system_text << END
@@ -81,6 +104,7 @@ system_check()
         Operating System  : ${BOLD}${UNAME_OS}${CLEAR}
         Hardware/Processor: ${BOLD}${UNAME_HW}${CLEAR} 
         Current directory : ${BOLD}${PWD}${CLEAR}
+        Kamtof Root       : ${BOLD}${KAMTOF_ROOT}${CLEAR}
     ${CLEAR}
 END
     
@@ -90,14 +114,14 @@ END
     if [ ${UNAME_OS} != "linux" ]
     then
         echo -e "${RED}${BOLD}[ERROR]${CLEAR} This script can only be executed on GNU/Linux systems. You have a ${SYS_TYPE} based system."
-        exit 1
+        safe_exit 1
     fi
 
     # Check hardware
     if [ ${UNAME_HW} != "x64" ]
     then
         echo -e "${RED}${BOLD}[ERROR]${CLEAR} ${RED}This script can only be executed on x86_64 hardware. You have a ${HW_TYPE} based hardware."
-        exit 2
+        safe_exit2
     fi
 
     return 0
@@ -120,16 +144,15 @@ usage()
     The default ${BLUE}${BOLD}build${CLEAR} and ${BLUE}${BOLD}bin${CLEAR} directories will be created two levels above the scripts directory.
     
     The following dependencies are required:
-        1. ${BOLD} Git${CLEAR}
-        2. ${BOLD} Zip${CLEAR}
-        3. ${BOLD} Unzip${CLEAR}
-        4. ${BOLD} Module${CLEAR}
+        1. ${BOLD} mpirun${CLEAR}
+        2. ${BOLD} git${CLEAR}
+        3. ${BOLD} wget${CLEAR}
     ${CLEAR}
     ${UNDERLINE}OPTIONS:${CLEAR}
-    ${BOLD}-s <source_directory>${CLEAR} default:${BOLD} <current folder>${CLEAR}
+    ${BOLD}-s <source_directory>${CLEAR} default:${BOLD} ${KAMTOF_ROOT}${CLEAR}
                 Directory where the KAMTOF code will be cloned.
                 This path is relative to the current directory.
-    ${BOLD}-b <build_directory>${CLEAR}  default:${BOLD} <source_directory>/build ${CLEAR}
+    ${BOLD}-b <build_directory>${CLEAR}  default:${BOLD} ${KAMTOF_ROOT}/../build ${CLEAR}
                 Directory where the KAMTOF code will be cloned and built (relative to source directory).
                 This directory will exist inside the base directory.
                 The executable will also be placed in this directory.
@@ -168,7 +191,7 @@ set_defaults()
     # Source directory
     if [ -z ${SRC_DIR} ]
     then
-        SRC_DIR="${CURR_DIR}/../.."
+        SRC_DIR="${KAMTOF_ROOT}/.."
     fi
     
     # Build directory
@@ -225,15 +248,15 @@ gather_options()
         e     ) EXEC_NAME=${OPTARG}          ;;
         d     ) DEL_SRC=${OPTARG}            ;;
         h     ) usage
-                exit 0;;
+                safe_exit 0;;
         -     )
                 echo -e "${ERROR_PREFIX} '--' (double-dash) options are not currently available"
                 echo -e "       use -h option for usage information"
-                exit 1                      ;;
+                safe_exit 1                      ;;
         :|?|* )
                 echo -e "${ERROR_PREFIX} Unknown option ${OPTION}."
                 echo -e "       use -h option for usage information"
-                exit 1                      ;;
+                safe_exit 1                      ;;
         esac
     done
 
@@ -246,20 +269,20 @@ gather_options()
         if [ -z "${SRC_DIR}" ]
         then
             echo -e "${ERROR_PREFIX} ${RED}Please use the option \"-s\" to specify a base directory for KAMTOF when using the option \"-g FALSE\".${CLEAR}"
-            exit 23
+            safe_exit 23
         fi
         
         # Consistency check to make sure that local repository is not deleted if using local repository
         if [ ${DEL_SRC} == "TRUE" ]
         then
             echo -e "${ERROR_PREFIX} ${RED}When using local source for KAMTOF, \"-d\" cannot be TRUE. Please use \"-d FALSE\" or \"-g TRUE\".${CLEAR}"
-            exit 24
+            safe_exit 24
         fi
     fi  
 
     #Set full path of build directory
-    BLD_DIR=${SRC_DIR}/${BLD_DIR}
-    LOG_DIR=${SRC_DIR}/logs
+    BLD_DIR="${SRC_DIR}/${BLD_DIR}"
+    LOG_DIR="${SRC_DIR}/logs"
 
     # Create directory to store log files
     mkdir -p ${LOG_DIR}
@@ -283,7 +306,7 @@ check_individual_dependencies()
     if ! command -v "${DEP_NAME}" >/dev/null 2>&1
     then
         echo -e "${ERROR_PREFIX} Required dependency ${BOLD}${DEP_NAME}${CLEAR} not found."
-        exit 4
+        safe_exit 4
     else
         echo -e "${INFO_SUBLEVEL_PREFIX} ${DEP_NAME} found."
     fi
@@ -367,7 +390,7 @@ download_kamtof_zip()
     #unzip ${SRC_DIR}/${ZIP_FILE_NAME}
 
 
-    exit 5
+    safe_exit 5
 
     return 0
 }
@@ -418,9 +441,9 @@ compile_kamtof()
 }
 
 # --------------------------------------------------------------------------------------------------
-# Load dependencies
+# Load dependencies using modules
 # --------------------------------------------------------------------------------------------------
-load_dependencies()
+load_dependencies_using_modules()
 {
     # Load required modules for KAMTOF
     MODULE_LOG=${LOG_DIR}/module.log
@@ -432,6 +455,81 @@ load_dependencies()
 
     #Error checking
     module load kamtof > ${MODULE_LOG} 2>&1
+    check_error_status ${PIPESTATUS[0]} "${ERROR_MSG}"
+
+    return 0
+}
+
+# --------------------------------------------------------------------------------------------------
+# Check if a required env variable is defined
+# --------------------------------------------------------------------------------------------------
+require_env_var()
+{
+    local var_name="$1"
+    if [ -z "${!var_name}" ]; then
+        return 1
+    fi
+}
+
+# --------------------------------------------------------------------------------------------------
+# Setup environment for KAMTOF
+# --------------------------------------------------------------------------------------------------
+setup_environment()
+{
+    # Check all required environment variables
+    REQ_VARS_LIST=("HPCX_ROOT" "CUDA_ROOT" "ROCM_ROOT" "ONEAPI_ROOT" "ONEMATH_ROOT")
+    
+    # Loop over all required env vars and check if defined
+    for REQ_ENV_VAR in "${REQ_VARS_LIST[@]}"
+    do
+        # Error message if check fails
+        local ERROR_MSG="Required environment variable \"${RED}${REQ_ENV_VAR}${CLEAR}\" is not set. Script cannot continue."
+        
+        require_env_var "${REQ_ENV_VAR}"
+        check_error_status "-${PIPESTATUS[0]}" "${ERROR_MSG}"
+    done
+
+    ERROR_MSG="One or more required environment variables are not set. Please set these variables before continuing.\n"
+    ERROR_MSG+="${ERROR_PREFIX} Run \"${BLUE}source export_root.sh${CLEAR}\" after setting required environment variables in ${BLUE}export_root.sh${CLEAR}." 
+    check_error_status "${GLOBAL_ERROR_CODE}" "${ERROR_MSG}"
+
+
+    source ${KAMTOF_ROOT}/scripts/env/oneAPI.sh
+    source ${KAMTOF_ROOT}/scripts/env/hpcx.sh
+    source ${KAMTOF_ROOT}/scripts/env/cuda.sh
+    source ${KAMTOF_ROOT}/scripts/env/rocm.sh
+    source ${KAMTOF_ROOT}/scripts/env/oneMath.sh
+
+    export CC=icx
+    export CXX=icpx
+
+}
+
+# --------------------------------------------------------------------------------------------------
+# Setup environment for KAMTOF using script
+# --------------------------------------------------------------------------------------------------
+setup_environment_using_script()
+{
+    # Set the KAMTOF root directory
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    export KAMTOF_ROOT="$(dirname "${SCRIPT_DIR}")"
+
+    source ${KAMTOF_ROOT}/scripts/setup_env.sh
+}
+
+# --------------------------------------------------------------------------------------------------
+# Load dependencies using scripts
+# --------------------------------------------------------------------------------------------------
+load_dependencies_using_script()
+{
+    # Load required modules for KAMTOF
+    echo -e "${INFO_PREFIX} Loading dependencies using scripts for KAMTOF."
+    
+    # Error message to be displayed in case of failure
+    ERROR_MSG="${ERROR_PREFIX} Could not load dependencies."
+
+    #Error checking
+    setup_environment_using_script
     check_error_status ${PIPESTATUS[0]} "${ERROR_MSG}"
 
     return 0
@@ -452,7 +550,7 @@ set_base_directory()
             then
                 echo -ne "${ERROR_PREFIX} ${RED} Source directory \"${SRC_DIR}\" already exists. Please choose a different source directory or "
                 echo -e "use option \"-d TRUE\" to delete existing directory.${CLEAR}"
-                exit 2
+                safe_exit 2
             elif [ ${DEL_SRC} == "TRUE" ]
             then
                 echo -e "${INFO_PREFIX} Deleting contents of ${SRC_DIR} for fresh install."
@@ -471,7 +569,6 @@ set_base_directory()
         
         # Clone KAMTOF repo
         clone_kamtof_repo
-        #download_kamtof_zip
     else
         if [ -d ${SRC_DIR} ]
         then
@@ -486,7 +583,7 @@ set_base_directory()
             echo -e "${ERROR_PREFIX} ${RED}Directory for existing KAMTOF source (${SRC_DIR}) does not exist.${CLEAR}"
             echo -ne "${ERROR_PREFIX} ${RED}Please use the option \"-s\" to specify an existing source directory for KAMTOF "
             echo -e  "or use \"-g TRUE\" to clone the latest production branch for KAMTOF."
-            exit 3
+            safe_exit 3
         fi
     fi
 
@@ -515,33 +612,63 @@ create_build_directory()
 }
 
 # --------------------------------------------------------------------------------------------------
-# Begin MAIN script
+# Execute main function if script is not being sourced
 # --------------------------------------------------------------------------------------------------
-# gather the command line options and pass them along to function
-gather_options $@
+run_main()
+{
+    if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+        # Script is being executed (not sourced), so exit normally
+        main $@
 
-# Load dependencies
-load_dependencies
+        # Ensure safe exit of function
+        exit 0
+    else
+        # Get name of script
+        SCRIPT_NAME=${BASH_SOURCE[0]}
+        # Script is being sourced, so use 'return'
+        echo -ne "${ERROR_PREFIX} Do not use \"source ${SCRIPT_NAME}\" to run this script."
+        echo -e " Please use \"${BLUE}./${SCRIPT_NAME}${CLEAR}\"."
+        return 1
+    fi
+}
 
-# Input start-up information
-echo -e "${INFO_PREFIX} Starting script for KAMTOF installation..."
 
-# Perform check of OS and hardware
-system_check
 
-# Check for required dependencies
-check_all_dependencies
+# --------------------------------------------------------------------------------------------------
+# Main script
+# --------------------------------------------------------------------------------------------------
+main()
+{
+    # Load dependencies
+    load_dependencies_using_script
+    #load_dependencies_using_modules
+    
+    # gather the command line options and pass them along to function
+    gather_options $@
 
-# Create KAMTOF directory for compilation by cloning it from Github or use a pre-existing directory
-set_base_directory
+    # Input start-up information
+    echo -e "${INFO_PREFIX} Starting script for KAMTOF installation..."
 
-# Create build directory
-create_build_directory
+    # Perform check of OS and hardware
+    system_check
 
-# Compile/build KAMTOF
-timer compile_kamtof "compilation of KAMTOF"
+    # Check for required dependencies
+    check_all_dependencies
 
-# Print success message
-echo -e "${INFO_SUCCESS} ${GREEN}KAMTOF installation successful.${CLEAR}"
+    # Create KAMTOF directory for compilation by cloning it from Github or use a pre-existing directory
+    set_base_directory
 
-exit 0
+    # Create build directory
+    create_build_directory
+
+    # Compile/build KAMTOF
+    timer compile_kamtof "compilation of KAMTOF"
+
+    # Print success message
+    echo -e "${INFO_SUCCESS} ${GREEN}KAMTOF installation successful.${CLEAR}"
+
+    safe_exit 0
+}
+
+# Run full script
+run_main $@
