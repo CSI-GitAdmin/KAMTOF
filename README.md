@@ -6,7 +6,7 @@ KAMTOF is a SYCL based GPU data framework for rapid incremental GPU porting of a
 
 KAMTOF requires the following tools:
 - Intel oneAPI toolkit version 2025.1+
-- CUDA toolkit v12.2+
+- CUDA toolkit v12.4+
 - ROCm toolkit v6.2+
 - oneMath v0.7 (Built with support for BLAS and SPARSE libraries of all 3 vendors)
 - HPCX MPI Library 2.21+
@@ -104,6 +104,8 @@ make -j8
 ```
 
 ## Running KAMTOF
+
+In order to run KAMTOF, users must source the [setup script](scripts/setup_env.sh).
 
 KAMTOF contains 3 different executables: 
 - `cpu_framework/cpu_framework_test` : Test certain basic functionalities of the CPU framework (Will not be built is ENABLE_GPU is ON)
