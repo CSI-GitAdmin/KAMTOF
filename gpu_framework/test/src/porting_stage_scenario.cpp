@@ -8,9 +8,9 @@ static void update_V();
 /*
  * This function depicts a typical scenario that could occur while a large code base is being ported to GPU
 */
-void porting_stage_scenario(bool run)
+void porting_stage_scenario()
 {
-   if(!run || (rank != 0))
+   if(rank != 0)
       return;
 
    /* P = f(V,T)
@@ -117,9 +117,9 @@ public:
    {
       size_t idx = GDF::get_1d_index(itm);
       size_t stride = GDF::get_1d_stride(itm);
-      for(size_t kk = idx; kk < V_gpu.size(); kk += stride)
+      for(size_t kk = idx; kk < V_gpu.size()/2; kk += stride)
       {
-         V_gpu[kk] = P_gpu[kk]/(V_gpu[kk] * sycl::fabs(1.33 - T_gpu[kk]));
+         V_gpu[kk] = P_gpu[kk]/(sycl::fabs(1.33 - T_gpu[kk]));
       }
    }
 
@@ -138,8 +138,8 @@ private:
 static void update_V()
 {
    CellRead<strict_fp_t> P = m_silo.retrieve_entry<strict_fp_t, CDF::StorageType::CELL>("variable_P");
-   CellRead<strict_fp_t> V = m_silo.retrieve_entry<strict_fp_t, CDF::StorageType::CELL>("variable_V");
-   Cell<strict_fp_t> T = m_silo.retrieve_entry<strict_fp_t, CDF::StorageType::CELL>("variable_T");
+   Cell<strict_fp_t> V = m_silo.retrieve_entry<strict_fp_t, CDF::StorageType::CELL>("variable_V");
+   CellRead<strict_fp_t> T = m_silo.retrieve_entry<strict_fp_t, CDF::StorageType::CELL>("variable_T");
 
-   GDF::submit_to_gpu<kg_update_V>(P, V, T);
+   GDF::submit_to_gpu<kg_update_V>(P, V, T); // Only edit the first half of the variable V and hence cannot do 'noinit' transfer optimization
 }

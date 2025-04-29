@@ -102,10 +102,10 @@ private:
    template <class T>
    T&& extract_gpu_data_for_extractor(T&& m_data);
 
-   template <class T, CDF::StorageType TYPE, uint8_t DIMS /* = ZEROD */>
+   template <class T, CDF::StorageType TYPE, uint8_t DIMS = ZEROD>
    dataSetStorageGPU<T, TYPE, DIMS>& extract_gpu_data_for_extractor(dataSetStorage<T, TYPE, DIMS>& dss_obj);
 
-   template <class T, CDF::StorageType TYPE, uint8_t DIMS /* = ZEROD */>
+   template <class T, CDF::StorageType TYPE, uint8_t DIMS = ZEROD>
    dataSetStorageGPURead<T, TYPE, DIMS>& extract_gpu_data_for_extractor(dataSetStorageRead<T, TYPE, DIMS>& dss_obj);
 
    template<typename T, bool async = false, typename... Us>

@@ -14,11 +14,41 @@ int main (int argc, char** argv)
 
    setup_cdf_vars_for_gpu_framework_tests();
 
-   porting_stage_scenario((argc == 2) && (atoi(argv[1]) == 1));
-
-   demonstrate_temp_write((argc == 2) && (atoi(argv[1]) == 2));
-
-   backend_testing((argc != 2) || ((argc == 2) && (atoi(argv[1]) == 3)));
+   if(argc == 2)
+   {
+      switch (atoi(argv[1]))
+      {
+         case 1:
+         {
+            porting_stage_scenario();
+            break;
+         }
+         case 2:
+         {
+            demonstrate_temp_write_async();
+            break;
+         }
+         case 3:
+         {
+            demonstrate_temp_write();
+            break;
+         }
+         case 4:
+         {
+            backend_testing();
+            break;
+         }
+         default:
+         {
+            log_error("Incorrect CLI passed for gpu_framework_test. Valid options are 1 -> porting_stage_scenario, 2 -> demonstrate_temp_write_async, "
+                      "3 -> demonstrate_temp_write, 4 -> backend_testing ");
+         }
+      }
+   }
+   else
+   {
+      backend_testing();
+   }
 
    m_silo.clear_entries();
 

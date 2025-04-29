@@ -506,10 +506,8 @@ void test_ncpu_ngpu()
    GDF::free_gpu_var(my_vec);
 }
 
-void backend_testing(bool run_backend_tests)
+void backend_testing()
 {
-   if(!run_backend_tests)
-      return;
 
    if(rank == 0)
    {
