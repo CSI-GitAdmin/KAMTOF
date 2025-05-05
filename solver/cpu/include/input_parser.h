@@ -16,6 +16,8 @@ public:
     int  solver_type     = 0;     // Type of linear solver: 0 ==> Jacobi, 1 ==> BiCGSTAB
     int  num_iter        = 10;    // Number of itrerations that the linear solver will perform
     strict_fp_t tol_val  = 1000;  // Tolerance at which the solver will stop
+    uint64_t gpu_global_range  = 262144;  // Global range for GPU kernels
+    uint64_t gpu_local_range  = 256;  // Global range for GPU kernels
     
     // list of all valid input strings
     std::vector<std::string> input_strings = {"use_gpu_solver",
@@ -25,7 +27,9 @@ public:
                                               "tol_type",
                                               "tol_val",
                                               "num_iter",
-                                              "solver_type"};
+                                              "solver_type",
+                                              "gpu_global_range",
+                                              "gpu_local_range"};
 
     InputParser(std::string input_file);
 

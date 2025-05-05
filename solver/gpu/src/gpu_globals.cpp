@@ -33,8 +33,8 @@ void setup_gpu_globals()
    // Setup GPU Manager (Has no variable which needs to be accesed on GPU)
    assert(!gpu_manager);
    gpu_manager = new GDF::GPUManager_t(GDF::sycl_device_t::GPU,
-                                       {1, 1, 1024 },
-                                       {1, 1,  256 } );
+                                       {1, 1, gpu_global_range },
+                                       {1, 1, gpu_local_range  } );
 
    log_msg("Device type selected : DEFAULT");
 }

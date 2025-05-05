@@ -7,6 +7,8 @@
 #include "pagefault_handler.h"
 #include "gpu_globals.h"
 
+struct sigaction old_handler;
+
 std::pair<void*,uint64_t> allocate_page_aligned_memory(const uint64_t byte_size)
 {
    // For pagefault mechanism to work, the allocation size must be a multiple of system page size
@@ -94,9 +96,32 @@ void pagefault_handler(int sig, siginfo_t *info, void *context)
       }
    }
 
-   // Only non-GPU realted seg faults make it to here
+   // The segfault 'might' be GPU realted but not managed by GDF, in that case it is safe to pass it to old handler
+
+   if ( (old_handler.sa_flags & SA_SIGINFO) && old_handler.sa_sigaction) // If the modern handler is set for SIGINFO and present, call it
+   {
+      old_handler.sa_sigaction(sig, info, context);
+   }
+   // SIG_DFL and SIG_IGN should be handeled specially as they are not function pointers (https://en.cppreference.com/w/c/program/SIG_strategies)
+   else if (old_handler.sa_handler == SIG_DFL)
+   {
+      // register the default handler and raise the signal
+      signal(sig, SIG_DFL);
+      raise(sig);
+   }
+   else if (old_handler.sa_handler == SIG_IGN)
+   {
+      // Ignore if previous handler was SIG_IGN
+      return;
+   }
+   else if (old_handler.sa_handler) // If the legacy handler is set, call the legacy handler
+   {
+      old_handler.sa_handler(sig);
+   }
+
+   // All SEGFAULTS must be handled by this handler (or) the old_handler. This section is for informing the user about unresolved signals
    char err_msg[200];
-   sprintf(err_msg, "Caught SIGSEGV at address: %p", fault_addr);
+   sprintf(err_msg, "Unresolved SIGSEGV at address: %p", fault_addr);
    log_msg<CDF::LogLevel::ERROR>(err_msg);
 }
 
@@ -114,7 +139,7 @@ void setup_pagefault_handler()
 
    sa.sa_flags = SA_SIGINFO;  // Use siginfo_t
 
-   if (sigaction(SIGSEGV, &sa, NULL) == -1) // Register our sigaction struct for handling SIGSEGV signal
+   if (sigaction(SIGSEGV, &sa, &old_handler) == -1) // Register our sigaction struct for handling SIGSEGV signal
    {
       log_msg<CDF::LogLevel::ERROR>("Failure while registering custom pagefault handler!");
    }

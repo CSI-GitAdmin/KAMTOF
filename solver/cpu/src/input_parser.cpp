@@ -6,6 +6,7 @@
 #include <iostream>
 #include <fstream>
 #include <algorithm>
+#include <cassert>
 
 /**
  * @brief InputParser: Constructor for parsing input file data.
@@ -195,6 +196,18 @@ void InputParser::parse_input_value(std::string& input_string,
          log_msg<CDF::LogLevel::ERROR>(err_msg);
       }
    }
+   else if(input_string == "gpu_global_range")
+   {
+      this->gpu_global_range = stoi(temp_str);
+   }
+   else if(input_string == "gpu_local_range")
+   {
+      this->gpu_local_range = stoi(temp_str);
+   }
+   else
+   {
+      assert(false && "This should be checked in find_input_option function");
+   }
 
    return;
 }
@@ -221,6 +234,8 @@ void InputParser::print_input_struct()
    print_variable_value(input_strings[5],this->tol_val);
    print_variable_value(input_strings[6],this->num_iter);
    print_variable_value(input_strings[7],this->solver_type);
+   print_variable_value(input_strings[8],this->gpu_global_range);
+   print_variable_value(input_strings[9],this->gpu_local_range);
 
    printf("-----------------------------------------------------------------\n");
 

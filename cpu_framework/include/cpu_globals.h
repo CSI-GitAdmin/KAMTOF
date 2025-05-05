@@ -5,6 +5,7 @@
    #define CDF_GLOBAL extern
 #endif
 
+#include <cstdint> // For uint64_t
 #include "fp_data_types.h"
 
 CDF_GLOBAL int rank, numprocs;
@@ -15,6 +16,8 @@ CDF_GLOBAL strict_fp_t tol;
 CDF_GLOBAL int tol_type;
 CDF_GLOBAL int solver_type;
 CDF_GLOBAL int num_iter;
+CDF_GLOBAL uint64_t gpu_global_range;
+CDF_GLOBAL uint64_t gpu_local_range;
 
 #ifdef ENABLE_GPU
 // Global variable to tell if the pagefault call is triggered by the const (or) the non const operator of DSB

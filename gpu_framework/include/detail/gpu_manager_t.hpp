@@ -343,14 +343,11 @@ void GPUManager_t::allocate_gpu_instance(const dataSetStorage<T, TYPE, DIMS>& ds
    assert(cur_gpu_instance); // Should not be null
    if(!cur_gpu_instance->get_gpu_dsb_ptr()) // If the m_gpu_dss variable is not allocated, allocate that
    {
-      dataSetStorageGPU<T, TYPE, DIMS>* dss_gpu_obj = malloc_gpu_var_internal<dataSetStorageGPU<T, TYPE, DIMS>, true>(1);
-
-      /* placement new operation done to initialize dss_gpu_obj which is malloc'ed and hence would not have the values initilaized unlike new'ed elements
-       *
+      /* 
       *  Note that the members of DSBGPU is default intialized to null/0 values at this point and
       *  will only be populated correctly after the calling allocate_gpu_data_ptr()
       */
-      new (dss_gpu_obj) dataSetStorageGPU<T, TYPE, DIMS>(dss_obj, this);
+      dataSetStorageGPU<T, TYPE, DIMS>* dss_gpu_obj = new dataSetStorageGPU<T, TYPE, DIMS>(dss_obj, this);
 
       // DSSGPU pointer is stored as DSB pointer inside gpu_instance as it is not templated
       // Should cast up to DSSGPU when members/data of DSSGPU are accessed
@@ -366,7 +363,7 @@ void GPUManager_t::deallocate_gpu_instance(const dataSetStorage<T, TYPE, DIMS>& 
    assert(cur_gpu_instance); // Should not be NULL
    assert(cur_gpu_instance->get_gpu_dsb_ptr()); // Should not be NULL
 
-   free_gpu_var_internal(cur_gpu_instance->get_gpu_dsb_ptr());
+   delete cur_gpu_instance->get_gpu_dsb_ptr();
    cur_gpu_instance->set_gpu_dsb_ptr(nullptr);
 
    delete cur_gpu_instance;
