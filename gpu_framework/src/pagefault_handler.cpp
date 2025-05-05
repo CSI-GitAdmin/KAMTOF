@@ -119,9 +119,9 @@ void pagefault_handler(int sig, siginfo_t *info, void *context)
       old_handler.sa_handler(sig);
    }
 
-   // We should never reach this region of the code. All SEGFAULTS must be handled by this handler (or) the old_handler
+   // All SEGFAULTS must be handled by this handler (or) the old_handler. This section is for informing the user about unresolved signals
    char err_msg[200];
-   sprintf(err_msg, "Unexpected SIGSEGV at address: %p", fault_addr);
+   sprintf(err_msg, "Unresolved SIGSEGV at address: %p", fault_addr);
    log_msg<CDF::LogLevel::ERROR>(err_msg);
 }
 
