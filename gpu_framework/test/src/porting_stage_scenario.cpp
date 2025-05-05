@@ -141,5 +141,5 @@ static void update_V()
    Cell<strict_fp_t> V = m_silo.retrieve_entry<strict_fp_t, CDF::StorageType::CELL>("variable_V");
    CellRead<strict_fp_t> T = m_silo.retrieve_entry<strict_fp_t, CDF::StorageType::CELL>("variable_T");
 
-   GDF::submit_to_gpu<kg_update_V>(P, V, T); // Only edit the first half of the variable V and hence cannot do 'noinit' transfer optimization
+   GDF::submit_to_gpu<kg_update_V>(P, V, T); // Only editing the first half of the variable V and hence cannot do 'noinit' transfer optimization
 }

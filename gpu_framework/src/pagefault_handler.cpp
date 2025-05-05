@@ -96,24 +96,32 @@ void pagefault_handler(int sig, siginfo_t *info, void *context)
       }
    }
 
-   // The segfault might be GPU realted but not managed by GDF, in that case it is safe to it to old handler
-   if (old_handler.sa_flags & SA_SIGINFO && old_handler.sa_sigaction)
+   // The segfault 'might' be GPU realted but not managed by GDF, in that case it is safe to pass it to old handler
+
+   if ( (old_handler.sa_flags & SA_SIGINFO) && old_handler.sa_sigaction) // If the modern handler is set for SIGINFO and present, call it
    {
       old_handler.sa_sigaction(sig, info, context);
    }
-   else if (old_handler.sa_handler == SIG_DFL) // If's the default handler, set the handler and raise SIGSEGV
+   // SIG_DFL and SIG_IGN should be handeled specially as they are not function pointers (https://en.cppreference.com/w/c/program/SIG_strategies)
+   else if (old_handler.sa_handler == SIG_DFL)
    {
-      signal(SIGSEGV, SIG_DFL);
-      raise(SIGSEGV);
+      // register the default handler and raise the signal
+      signal(sig, SIG_DFL);
+      raise(sig);
    }
-   else if (old_handler.sa_handler)
+   else if (old_handler.sa_handler == SIG_IGN)
+   {
+      // Ignore if previous handler was SIG_IGN
+      return;
+   }
+   else if (old_handler.sa_handler) // If the legacy handler is set, call the legacy handler
    {
       old_handler.sa_handler(sig);
    }
 
-   // Only non-GPU realted seg faults make it to here
+   // We should never reach this region of the code. All SEGFAULTS must be handled by this handler (or) the old_handler
    char err_msg[200];
-   sprintf(err_msg, "Caught SIGSEGV at address: %p", fault_addr);
+   sprintf(err_msg, "Unexpected SIGSEGV at address: %p", fault_addr);
    log_msg<CDF::LogLevel::ERROR>(err_msg);
 }
 
