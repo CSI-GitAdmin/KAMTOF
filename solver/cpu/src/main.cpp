@@ -74,6 +74,8 @@ int main (int argc, char** argv)
    tol_type              = input_data_ptr->tol_type;         // 0: absolute , 1: relative
    solver_type           = input_data_ptr->solver_type;      // 0: jacobi , 1: bicgstab
    num_iter              = input_data_ptr->num_iter;         // number of inner iterations
+   gpu_global_range      = input_data_ptr->gpu_global_range; // GPU global range
+   gpu_local_range       = input_data_ptr->gpu_local_range;  // GPU local range
 
    std::vector<strict_fp_t> residual_norm;
 
