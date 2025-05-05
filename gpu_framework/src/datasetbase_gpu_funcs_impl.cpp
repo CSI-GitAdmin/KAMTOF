@@ -43,7 +43,7 @@ void dataSetBase::deallocate_gpu_instance()
    assert(gpu_instance->get_gpu_dsb_ptr()); // Should not be NULL
    assert(!gpu_instance->get_gpu_dsb_ptr()->void_data()); // Should be NULL
 
-   GDF::free_gpu_var(gpu_instance->get_gpu_dsb_ptr());
+   delete gpu_instance->get_gpu_dsb_ptr();
    gpu_instance->set_gpu_dsb_ptr(nullptr);
 
    delete gpu_instance;

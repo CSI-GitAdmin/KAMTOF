@@ -7,6 +7,8 @@
 #include "pagefault_handler.h"
 #include "gpu_globals.h"
 
+struct sigaction old_handler;
+
 std::pair<void*,uint64_t> allocate_page_aligned_memory(const uint64_t byte_size)
 {
    // For pagefault mechanism to work, the allocation size must be a multiple of system page size
@@ -94,6 +96,21 @@ void pagefault_handler(int sig, siginfo_t *info, void *context)
       }
    }
 
+   // The segfault might be GPU realted but not managed by GDF, in that case it is safe to it to old handler
+   if (old_handler.sa_flags & SA_SIGINFO && old_handler.sa_sigaction)
+   {
+      old_handler.sa_sigaction(sig, info, context);
+   }
+   else if (old_handler.sa_handler == SIG_DFL) // If's the default handler, set the handler and raise SIGSEGV
+   {
+      signal(SIGSEGV, SIG_DFL);
+      raise(SIGSEGV);
+   }
+   else if (old_handler.sa_handler)
+   {
+      old_handler.sa_handler(sig);
+   }
+
    // Only non-GPU realted seg faults make it to here
    char err_msg[200];
    sprintf(err_msg, "Caught SIGSEGV at address: %p", fault_addr);
@@ -114,7 +131,7 @@ void setup_pagefault_handler()
 
    sa.sa_flags = SA_SIGINFO;  // Use siginfo_t
 
-   if (sigaction(SIGSEGV, &sa, NULL) == -1) // Register our sigaction struct for handling SIGSEGV signal
+   if (sigaction(SIGSEGV, &sa, &old_handler) == -1) // Register our sigaction struct for handling SIGSEGV signal
    {
       log_msg<CDF::LogLevel::ERROR>("Failure while registering custom pagefault handler!");
    }
