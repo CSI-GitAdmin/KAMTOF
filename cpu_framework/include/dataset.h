@@ -16,7 +16,7 @@ public:
    {
       static_assert(DIMS == ZEROD, "This operator can only be called on ZEROD variables");
 #ifdef ENABLE_GPU
-   #ifndef GPU_DEVELOP
+   #ifndef CPU_AUTO_TRANSFER
       #ifndef NDEBUG
             dataSetBase::assert_cpu_data_writeability();
       #endif
@@ -37,13 +37,13 @@ public:
       static_assert(DIMS > 0, "This interface is not intended for ZEROD variables");
       static_assert(DIMS + 1 == sizeof...(Indices), "You have provided the wrong number of arguments");
 #ifdef ENABLE_GPU
-   #ifndef GPU_DEVELOP
+   #ifndef CPU_AUTO_TRANSFER
       #ifndef NDEBUG
             dataSetBase::assert_cpu_data_writeability();
       #endif
    #endif
 #endif
-#ifdef GPU_DEVELOP
+#ifdef CPU_AUTO_TRANSFER
       in_const_operator = false;
 #endif
       return indexer<T, DIMS>::access(static_cast<T*>(m_data), m_offsets, DIMS+1, static_cast<Indices&&>(idx)...);
@@ -54,7 +54,7 @@ public:
    {
       static_assert(DIMS > 0, "This interface is not intended for ZEROD variables");
       static_assert(DIMS + 1 == sizeof...(Indices), "You have provided the wrong number of arguments");
-#ifdef GPU_DEVELOP
+#ifdef CPU_AUTO_TRANSFER
       in_const_operator = true;
 #endif
       return indexer<T, DIMS>::access_const(static_cast<T*>(m_data), m_offsets, DIMS+1, static_cast<Indices&&>(idx)...);

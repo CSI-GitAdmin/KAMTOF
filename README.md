@@ -67,7 +67,7 @@ These are the CMake options provided by KAMTOF. Please preface all these options
   - Options: ON/OFF
   - Default: OFF
  
-- GPU_DEVELOP : Turns ON GPU development mode which enables automatic data transfers to the CPU. This negatively impacts the performance of the CPU data access operators. 
+- CPU_AUTO_TRANSFER : Turns ON GPU development mode which enables automatic data transfers to the CPU. This negatively impacts the performance of the CPU data access operators. 
   - Options: ON/OFF
   - Default: ON
  

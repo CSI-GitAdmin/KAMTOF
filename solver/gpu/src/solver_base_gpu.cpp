@@ -84,6 +84,10 @@ void Solver_base_gpu::set_boundary_conditions (const strict_fp_t QL, const stric
    VectorRead<int> boundary_type_start_and_end_index = m_silo.retrieve_entry<int, CDF::StorageType::VECTOR>("boundary_type_start_and_end_index");
    Boundary<strict_fp_t> Q_boundary_local = m_silo.retrieve_entry<strict_fp_t, CDF::StorageType::BOUNDARY>("Q_boundary_local");
 
+#ifdef GPU_MANUAL_TRANSFER
+   GDF::transfer_to_gpu_noinit(Q_boundary_local);
+#endif
+
    // Left boundary
    GDF::submit_to_gpu<kg_set_boundary_conditions>(boundary_type_start_and_end_index[2],
                                                   boundary_type_start_and_end_index[3],
@@ -145,6 +149,10 @@ private:
 void Solver_base_gpu::initialize_solution (const int num_solved, const strict_fp_t Q_initial)
 {
    Cell<strict_fp_t> Q_cell_local = m_silo.retrieve_entry<strict_fp_t, CDF::StorageType::CELL>("Q_cell_local");
+
+#ifdef GPU_MANUAL_TRANSFER
+   GDF::transfer_to_gpu_noinit(Q_cell_local);
+#endif
 
    GDF::submit_to_gpu<kg_initialize_solution>(num_solved,
                                               Q_initial,
@@ -235,6 +243,10 @@ void Solver_base_gpu::update_solution(const int num_solved)
       CellRead<strict_fp_t> volume_local = m_silo.retrieve_entry<strict_fp_t, CDF::StorageType::CELL>("volume_local");
       CellRead<strict_fp_t> residual_local = m_silo.retrieve_entry<strict_fp_t, CDF::StorageType::CELL>("residual_local");
 
+#ifdef GPU_MANUAL_TRANSFER
+      GDF::transfer_to_gpu_readonly(volume_local, residual_local);
+      GDF::transfer_to_gpu_move(Q_cell_local);
+#endif
       GDF::submit_to_gpu<kg_update_solution_explicit>(num_solved,
                                                       delta_t,
                                                       volume_local,
@@ -255,6 +267,11 @@ void Solver_base_gpu::update_solution(const int num_solved)
       }
 
       CellRead<strict_fp_t> dQ_local = m_silo.retrieve_entry<strict_fp_t, CDF::StorageType::CELL>("dQ_local");
+
+#ifdef GPU_MANUAL_TRANSFER
+      GDF::transfer_to_gpu_readonly(dQ_local);
+      GDF::transfer_to_gpu_move(Q_cell_local);
+#endif
       
       GDF::submit_to_gpu<kg_update_solution_add_dQ_to_Q_cell>(num_solved,
                                                               dQ_local,
@@ -402,13 +419,19 @@ void Solver_base_gpu::jacobi_linear_solver(const int num_solved)
    Cell<strict_fp_t> dQ_old_local = m_silo.retrieve_entry<strict_fp_t, CDF::StorageType::CELL>("dQ_old_local");
    Cell<strict_fp_t> dQ_local = m_silo.retrieve_entry<strict_fp_t, CDF::StorageType::CELL>("dQ_local");
    
+#ifndef GPU_FULLY_OPTIMIZED
    GDF::transfer_to_gpu_noinit(dQ_old_local);
+#endif
    GDF::memset_gpu_var(dQ_old_local.gpu_data(), 0, num_solved);
 
    for (unsigned int iter = 0; iter < num_iter; iter++)
    {
       mpi_nbnb_transfer_gpu(dQ_old_local.gpu_data());
-      
+
+#ifdef GPU_MANUAL_TRANSFER
+      GDF::transfer_to_gpu_readonly(rhs_local, A_data_local, ia_local, ja_local, dQ_old_local);
+      GDF::transfer_to_gpu_move(dQ_local);
+#endif
       GDF::submit_to_gpu<kg_jacobi_linear_solver>(num_solved,
                                                   rhs_local,
                                                   A_data_local,
@@ -879,7 +902,9 @@ void Solver_base_gpu::compute_time_step(const int num_solved, const int num_atta
 
    VectorRead<int> number_of_neighbors_local = m_silo.retrieve_entry<int, CDF::StorageType::VECTOR>("number_of_neighbors_local");
    FaceRead<strict_fp_t> area_local = m_silo.retrieve_entry<strict_fp_t, CDF::StorageType::FACE>("area_local");
-   
+#ifdef GPU_MANUAL_TRANSFER
+   GDF::transfer_to_gpu_readonly(number_of_neighbors_local, area_local);
+#endif
    GDF::submit_to_gpu<kg_sum_interior_face_areas>(num_solved,
                                                   number_of_neighbors_local,
                                                   area_local,
@@ -888,6 +913,9 @@ void Solver_base_gpu::compute_time_step(const int num_solved, const int num_atta
    BoundaryRead<int> boundary_face_to_cell_local = m_silo.retrieve_entry<int, CDF::StorageType::BOUNDARY>("boundary_face_to_cell_local");
    BoundaryRead<strict_fp_t> boundary_area_local = m_silo.retrieve_entry<strict_fp_t, CDF::StorageType::BOUNDARY>("boundary_area_local");
    
+#ifdef GPU_MANUAL_TRANSFER
+   GDF::transfer_to_gpu_readonly(boundary_face_to_cell_local, boundary_area_local);
+#endif
    GDF::submit_to_gpu<kg_sum_boundary_face_areas>(num_attached,
                                                   boundary_face_to_cell_local,
                                                   boundary_area_local,
@@ -898,6 +926,9 @@ void Solver_base_gpu::compute_time_step(const int num_solved, const int num_atta
 
    CellRead<strict_fp_t> volume_local = m_silo.retrieve_entry<strict_fp_t, CDF::StorageType::CELL>("volume_local");
    
+#ifdef GPU_MANUAL_TRANSFER
+   GDF::transfer_to_gpu_readonly(volume_local);
+#endif
    GDF::submit_to_gpu<kg_find_min_inverse_length_scale>(num_solved,
                                                         volume_local,
                                                         data,
@@ -1046,6 +1077,11 @@ void Solver_base_gpu::compute_rdist(const int num_solved, const int num_attached
    VectorRead<strict_fp_t> xcen_local = m_silo.retrieve_entry<strict_fp_t, CDF::StorageType::VECTOR>("xcen_local");
    VectorRead<strict_fp_t> normal_local = m_silo.retrieve_entry<strict_fp_t, CDF::StorageType::VECTOR>("normal_local");
    Face<strict_fp_t> rdista_local = m_silo.retrieve_entry<strict_fp_t, CDF::StorageType::FACE>("rdista_local");
+
+#ifdef GPU_MANUAL_TRANSFER
+   GDF::transfer_to_gpu_move(rdista_local);
+   GDF::transfer_to_gpu_readonly(number_of_neighbors_local, cell_neighbors_local, area_local, xcen_local, normal_local);
+#endif
    
    GDF::submit_to_gpu<kg_compute_interior_faces_rdist>(num_solved,
                                                        number_of_neighbors_local,
@@ -1064,6 +1100,10 @@ void Solver_base_gpu::compute_rdist(const int num_solved, const int num_attached
    VectorRead<strict_fp_t> boundary_normal_local = m_silo.retrieve_entry<strict_fp_t, CDF::StorageType::VECTOR>("boundary_normal_local");
    Boundary<strict_fp_t> boundary_rdista_local = m_silo.retrieve_entry<strict_fp_t, CDF::StorageType::BOUNDARY>("boundary_rdista_local");
    
+#ifdef GPU_MANUAL_TRANSFER
+   GDF::transfer_to_gpu_move(boundary_rdista_local);
+   GDF::transfer_to_gpu_readonly(boundary_face_to_cell_local, boundary_area_local, boundary_normal_local, boundary_xcen_local, xcen_local, boundary_rdista_local);
+#endif
    GDF::submit_to_gpu<kg_compute_boundary_faces_rdist>(num_attached,
                                                        boundary_face_to_cell_local,
                                                        boundary_area_local,
@@ -1244,6 +1284,11 @@ void Solver_base_gpu::compute_residual(const int num_solved, const int num_attac
    FaceRead<strict_fp_t> rdista_local = m_silo.retrieve_entry<strict_fp_t, CDF::StorageType::FACE>("rdista_local");
    CellRead<strict_fp_t> Q_cell_local = m_silo.retrieve_entry<strict_fp_t, CDF::StorageType::CELL>("Q_cell_local");
    Cell<strict_fp_t> residual_local = m_silo.retrieve_entry<strict_fp_t, CDF::StorageType::CELL>("residual_local");
+
+#ifdef GPU_MANUAL_TRANSFER
+   GDF::transfer_to_gpu_readonly(number_of_neighbors_local, cell_neighbors_local, rdista_local, Q_cell_local);
+   GDF::transfer_to_gpu_move(residual_local);
+#endif
    
    GDF::submit_to_gpu<kg_residual_interior_diffution>(num_solved,
                                                       number_of_neighbors_local,
@@ -1257,6 +1302,10 @@ void Solver_base_gpu::compute_residual(const int num_solved, const int num_attac
    BoundaryRead<strict_fp_t> Q_boundary_local = m_silo.retrieve_entry<strict_fp_t, CDF::StorageType::BOUNDARY>("Q_boundary_local");
    BoundaryRead<strict_fp_t> boundary_rdista_local = m_silo.retrieve_entry<strict_fp_t, CDF::StorageType::BOUNDARY>("boundary_rdista_local");
    
+#ifdef GPU_MANUAL_TRANSFER
+   GDF::transfer_to_gpu_readonly(boundary_face_to_cell_local, Q_boundary_local, Q_cell_local, boundary_rdista_local);
+   GDF::transfer_to_gpu_move(residual_local);
+#endif
    GDF::submit_to_gpu<kg_residual_boundary_diffution>(num_attached,
                                                       boundary_face_to_cell_local,
                                                       Q_boundary_local,
@@ -1266,6 +1315,9 @@ void Solver_base_gpu::compute_residual(const int num_solved, const int num_attac
    
    strict_fp_t* residual_norm = GDF::malloc_gpu_var<strict_fp_t, true>(1);
    residual_norm[0] = 0.0;
+#ifdef GPU_MANUAL_TRANSFER
+   GDF::transfer_to_gpu_readonly(residual_local);
+#endif
    GDF::submit_to_gpu<kg_compute_system_compute_residual_norm>(num_solved,
                                                                residual_local,
                                                                residual_norm);
@@ -1276,6 +1328,10 @@ void Solver_base_gpu::compute_residual(const int num_solved, const int num_attac
    {
       Cell<strict_fp_t> rhs_local = m_silo.retrieve_entry<strict_fp_t, CDF::StorageType::CELL>("rhs_local");
 
+#ifdef GPU_MANUAL_TRANSFER
+      GDF::transfer_to_gpu_readonly(residual_local);
+      GDF::transfer_to_gpu_noinit(rhs_local);
+#endif
       GDF::submit_to_gpu<kg_compute_system_add_residual_to_rhs>(num_solved,
                                                                 residual_local,
                                                                 rhs_local);
@@ -1430,14 +1486,18 @@ void Solver_base_gpu::compute_system(const int num_solved, const int num_attache
    if(implicit_solver == true)
    {
       Vector<strict_fp_t> A_data_local = m_silo.retrieve_entry<strict_fp_t, CDF::StorageType::VECTOR>("A_data_local");
-
+#ifndef GPU_FULLY_OPTIMIZED
       GDF::transfer_to_gpu_noinit(A_data_local);
+#endif
       GDF::memset_gpu_var(A_data_local.gpu_data(), 0, this->nnz_local);
 
       // Time term
       CellRead<strict_fp_t> volume_local = m_silo.retrieve_entry<strict_fp_t, CDF::StorageType::CELL>("volume_local");
       CellRead<int> csr_diag_idx_local = m_silo.retrieve_entry<int, CDF::StorageType::CELL>("csr_diag_idx_local");
-      
+
+#ifdef GPU_MANUAL_TRANSFER
+   GDF::transfer_to_gpu_readonly(csr_diag_idx_local, volume_local);
+#endif
       GDF::submit_to_gpu<kg_compute_system_time_term>(num_solved,
                                                       delta_t,
                                                       csr_diag_idx_local,
@@ -1449,6 +1509,9 @@ void Solver_base_gpu::compute_system(const int num_solved, const int num_attache
       FaceRead<int> csr_idx_local = m_silo.retrieve_entry<int, CDF::StorageType::FACE>("csr_idx_local");
       FaceRead<strict_fp_t> rdista_local = m_silo.retrieve_entry<strict_fp_t, CDF::StorageType::FACE>("rdista_local");
       
+#ifdef GPU_MANUAL_TRANSFER
+      GDF::transfer_to_gpu_readonly(number_of_neighbors_local, rdista_local, csr_diag_idx_local, csr_idx_local, A_data_local);
+#endif
       GDF::submit_to_gpu<kg_compute_system_interior_diffution>(num_solved,
                                                                number_of_neighbors_local,
                                                                rdista_local,
@@ -1461,6 +1524,10 @@ void Solver_base_gpu::compute_system(const int num_solved, const int num_attache
       VectorRead<int> global_local = m_silo.retrieve_entry<int, CDF::StorageType::VECTOR>("global_local");
       BoundaryRead<int> boundary_face_to_cell_local = m_silo.retrieve_entry<int, CDF::StorageType::BOUNDARY>("boundary_face_to_cell_local");
       BoundaryRead<strict_fp_t> boundary_rdista_local = m_silo.retrieve_entry<strict_fp_t, CDF::StorageType::BOUNDARY>("boundary_rdista_local");
+
+#ifdef GPU_MANUAL_TRANSFER
+      GDF::transfer_to_gpu_readonly(boundary_face_to_cell_local, boundary_rdista_local, csr_diag_idx_local, A_data_local);
+#endif
       
       GDF::submit_to_gpu<kg_compute_system_boundary_diffution>(num_attached,
                                                                boundary_face_to_cell_local,
@@ -1480,4 +1547,29 @@ strict_fp_t Solver_base_gpu::print_residual_norm(const int time_iter)
 strict_fp_t Solver_base_gpu::get_residual_norm()
 {
    return residual_norm;
+}
+
+bool Solver_base_gpu::continue_iterations(const uint64_t cur_iter)
+{
+   bool result = true;
+   if(tol_type == 0)
+   {
+      if(residual_norm <= tol)
+         result = false;
+   }
+   else if(tol_type == 1)
+   {
+      if(inital_residual_norm/residual_norm >= tol)
+         result = false;
+   }
+   else if(tol_type == 2)
+   {
+      if(cur_iter > tol)
+         result = false;
+   }
+   else
+   {
+      log_error("invalid tol_type provided. 0 -> abs, 1 -> rel, 2 -> iteration_count");
+   }
+   return result;
 }

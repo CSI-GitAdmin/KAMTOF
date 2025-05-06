@@ -676,3 +676,28 @@ strict_fp_t Solver_base::get_residual_norm()
 {
    return residual_norm;
 }
+
+bool Solver_base::continue_iterations(const uint64_t cur_iter)
+{
+   bool result = true;
+   if(tol_type == 0)
+   {
+      if(residual_norm <= tol)
+         result = false;
+   }
+   else if(tol_type == 1)
+   {
+      if(inital_residual_norm/residual_norm >= tol)
+         result = false;
+   }
+   else if(tol_type == 2)
+   {
+      if(cur_iter > tol)
+         result = false;
+   }
+   else
+   {
+      log_error("invalid tol_type provided. 0 -> abs, 1 -> rel, 2 -> iteration_count");
+   }
+   return result;
+}
