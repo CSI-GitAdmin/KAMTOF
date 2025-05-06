@@ -108,7 +108,7 @@ void test_dss_gpu()
 
    GDF::submit_to_gpu<kg_compute_pressure>(pressure, volume, n, R, temperature);
 
-#ifdef GPU_DEVELOP // If GPU_DEVELOP mode is ON, we do not need to explicitly bring the data back
+#ifdef CPU_AUTO_TRANSFER // If CPU_AUTO_TRANSFER mode is ON, we do not need to explicitly bring the data back
    pressure[4] = volume[4];
    pressure[4] = ((n * R * init_temp)/volume[0]);
 #endif
@@ -130,7 +130,7 @@ void test_dss_gpu()
 
    GDF::submit_to_gpu<kg_compute_temperature>(temperature, pressure, n, R, volume);
 
-#ifndef GPU_DEVELOP
+#ifndef CPU_AUTO_TRANSFER
    GDF::transfer_to_cpu_move(pressure, temperature, volume);
 #endif
 
@@ -168,7 +168,7 @@ void test_dss_gpu()
 
    GDF::submit_to_gpu<kg_set_initial_condition>(velocity, 1.0, 2.0, 3.0);
 
-#ifndef GPU_DEVELOP
+#ifndef CPU_AUTO_TRANSFER
    GDF::transfer_to_cpu_copy(velocity);
 #endif
 
@@ -217,7 +217,7 @@ void test_dss_gpu_resize()
 
    GDF::submit_to_gpu<kg_compute_pressure>(pressure, volume, n, R, temperature);
 
-#ifndef GPU_DEVELOP
+#ifndef CPU_AUTO_TRANSFER
    GDF::transfer_to_cpu_move(pressure, volume, temperature);
 #endif
 
@@ -436,7 +436,7 @@ void test_silo_null()
 
    // The variable can be safely passed on to the transfer call
    GDF::submit_to_gpu<kg_silo_null>(random_idx, silo_null, subtract_val);
-#ifndef GPU_DEVELOP
+#ifndef CPU_AUTO_TRANSFER
    GDF::transfer_to_cpu_move(silo_null);
 #endif
    CellRead<strict_fp_t> silo_null_registered = m_silo.register_entry<strict_fp_t, CDF::StorageType::CELL>(silo_str);
@@ -446,7 +446,7 @@ void test_silo_null()
 
    GDF::submit_to_gpu<kg_silo_null>(random_idx, silo_null, subtract_val);
 
-#ifndef GPU_DEVELOP
+#ifndef CPU_AUTO_TRANSFER
    GDF::transfer_to_cpu_move(silo_null);
 #endif
 

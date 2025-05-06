@@ -209,7 +209,9 @@ dataSetStorageGPU<T, TYPE, DIMS>& GPUManager_t::extract_gpu_data_for_extractor(d
 template<typename T, bool async, typename... Us>
 void GPUManager_t::submit_to_gpu_internal(Us&&... args)
 {
+#ifdef GPU_AUTO_TRANSFER
    callExtractorIfExists<T>(args...);
+#endif
 
    // Call the actual kernel
    m_que.parallel_for(sycl::nd_range<3>{global_range,local_range}, T{extract_gpu_data_for_kernel(std::forward<Us>(args))...});

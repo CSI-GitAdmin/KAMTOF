@@ -88,7 +88,7 @@ void dataSetBase::resize_internal(const uint64_t new_size)
       // m_data exists, we need copy it over and free it
       if(m_data)
       {
-#ifdef GPU_DEVELOP
+#ifdef CPU_AUTO_TRANSFER
          copy_over_and_resize_page_aligned_memory(new_byte_size);
 #else
          assert(m_size != 0 && m_byte_size != 0);
@@ -157,7 +157,7 @@ dataSetBase::~dataSetBase()
 void dataSetBase::allocate_m_data(const uint64_t byte_size)
 {
    assert(!m_data);
-#ifdef GPU_DEVELOP
+#ifdef CPU_AUTO_TRANSFER
    allocate_page_aligned_memory_internal(byte_size);
 #else
    m_data = static_cast<void*>(new char[byte_size]());
@@ -167,7 +167,7 @@ void dataSetBase::allocate_m_data(const uint64_t byte_size)
 void dataSetBase::delete_m_data()
 {
    assert(m_data);
-#ifdef GPU_DEVELOP
+#ifdef CPU_AUTO_TRANSFER
    deallocate_page_aligned_memory_internal();
 #else
    delete[] static_cast<char*>(m_data);

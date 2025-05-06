@@ -157,13 +157,17 @@ void InputParser::parse_input_value(std::string& input_string,
    else if (input_string == "tol_type")
    {
       // convert string based input into integer value
-      if (temp_str == "abs")
+      if (temp_str == "abs" || stoi(temp_str) == 0)
       {
          this->tol_type = 0;   
       }
-      else if (temp_str == "rel")
+      else if (temp_str == "rel" || stoi(temp_str) == 1)
       {
          this->tol_type = 1;   
+      }
+      else if (temp_str == "iter" || stoi(temp_str) == 2)
+      {
+         this->tol_type = 2;
       }
       else
       {
@@ -182,11 +186,11 @@ void InputParser::parse_input_value(std::string& input_string,
    else if (input_string == "solver_type")
    {
       // convert string based input into integer value
-      if (temp_str == "jacobi")
+      if (temp_str == "jacobi" || stoi(temp_str) == 0)
       {
          this->solver_type = 0;   
       }
-      else if (temp_str == "bicgstab")
+      else if (temp_str == "bicgstab" || stoi(temp_str) == 1)
       {
          this->solver_type = 1;   
       }

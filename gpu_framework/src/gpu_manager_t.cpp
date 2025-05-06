@@ -6,7 +6,7 @@
 namespace GDF
 {
 
-#ifdef GPU_DEVELOP
+#ifdef CPU_AUTO_TRANSFER
 void protect_m_data(const dataSetBase* const dsb_entry, GPUInstance_t& cur_gpu_instance, const xpu_data_status_t& cpu_data_status)
 {
    /*
@@ -202,7 +202,7 @@ void GPUManager_t::transfer_to_gpu_internal(const dataSetBase* const dsb_entry, 
          // Memcpy can be done even to the temp data
          void* cpu_m_data = cur_gpu_instance.get_valid_cpu_data();
          void* gpu_m_data = cur_gpu_instance.get_valid_gpu_data();
-#ifdef GPU_DEVELOP
+#ifdef CPU_AUTO_TRANSFER
          if(do_memcpy == 1) // cpu_pointer is only needed for reading
          {
             if(mprotect(cpu_m_data, dsb_entry->get_allocation_size(), PROT_READ) == -1)
@@ -289,7 +289,7 @@ void GPUManager_t::transfer_to_gpu_internal(const dataSetBase* const dsb_entry, 
          log_msg<CDF::LogLevel::ERROR>("An internal error occured while moving data from CPU to GPU.");
       }
       }
-#ifdef GPU_DEVELOP
+#ifdef CPU_AUTO_TRANSFER
       protect_m_data(dsb_entry, cur_gpu_instance, cpu_data_status);
 #endif
 
@@ -434,7 +434,7 @@ void GPUManager_t::transfer_to_cpu_internal(const dataSetBase * const dsb_entry,
          // Memcpy can be done even to the temp data
          void* cpu_m_data = cur_gpu_instance.get_valid_cpu_data();
          void* gpu_m_data = cur_gpu_instance.get_valid_gpu_data();
-#ifdef GPU_DEVELOP
+#ifdef CPU_AUTO_TRANSFER
          if(do_memcpy == -1) // cpu_pointer is only needed for reading
          {
             if(mprotect(cpu_m_data, dsb_entry->get_allocation_size(), PROT_READ) == -1)
@@ -520,7 +520,7 @@ void GPUManager_t::transfer_to_cpu_internal(const dataSetBase * const dsb_entry,
       }
       }
 
-#ifdef GPU_DEVELOP
+#ifdef CPU_AUTO_TRANSFER
       protect_m_data(dsb_entry, cur_gpu_instance, cpu_data_status);
 #endif
 

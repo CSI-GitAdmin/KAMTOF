@@ -73,7 +73,7 @@ public:
       assert(CDF::extractor<T>::PODType() == m_pod_type); // Make sure the calling type is the same as the register type
       assert(index < m_size && !m_offsets); // Ensure that the index is within bounds
 #endif
-#ifdef GPU_DEVELOP
+#ifdef CPU_AUTO_TRANSFER
       in_const_operator = false;
 #endif
       return static_cast<T*>(m_data)[index];
@@ -86,7 +86,7 @@ public:
       assert(CDF::extractor<T>::PODType() == m_pod_type); // Make sure the calling type is the same as the register type
       assert(index < m_size && !m_offsets); // Ensure that the index is within bounds
 #endif
-#ifdef GPU_DEVELOP
+#ifdef CPU_AUTO_TRANSFER
       in_const_operator = true;
 #endif
       return static_cast<T*>(m_data)[index];

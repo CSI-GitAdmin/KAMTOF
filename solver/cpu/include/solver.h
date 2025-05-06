@@ -55,6 +55,8 @@ public:
 
    void bicgstab_linear_solver();
 
+   bool continue_iterations(const uint64_t cur_iter);
+
    Solver_base();
 
    int nnz_local;
@@ -62,6 +64,7 @@ public:
    int ncol_local;
 
    strict_fp_t residual_norm;
+   strict_fp_t inital_residual_norm;
    strict_fp_t delta_t;
 };
 
