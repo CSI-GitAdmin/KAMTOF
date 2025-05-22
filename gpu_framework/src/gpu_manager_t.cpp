@@ -718,7 +718,7 @@ sycl::device custom_device_selector(const sycl_device_t& m_device_type, const st
    }
    else
    {
-      std::string err_msg = " Number of device of requested type is lesser than the number of cores launched on this node!";
+      std::string err_msg = "There are fewer devices of the type requested available than the number of cores launched on this node!";
       log_msg<CDF::LogLevel::ERROR>(err_msg);
    }
 
